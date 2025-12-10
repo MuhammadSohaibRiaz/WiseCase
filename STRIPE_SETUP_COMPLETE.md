@@ -30,7 +30,7 @@
 Add this line to your `.env.local` file:
 
 ```env
-STRIPE_WEBHOOK_SECRET=whsec_27fb530063b2bee8fbd616acadbad198afc458c955cce5ec887e4590c7d208b8
+STRIPE_WEBHOOK_SECRET=
 ```
 
 ### 2. Configure Stripe Webhook (For Production)

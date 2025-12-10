@@ -5,8 +5,8 @@
 1. ✅ SQL migration executed: `scripts/021_add_awaiting_payment_status.sql`
 2. ✅ Stripe test keys added to `.env.local`:
    ```env
-   STRIPE_SECRET_KEY=sk_test_51RoQy4QySUyergnh1NylwG4n4y9RB4wt5pd7RftGvLDp80NfMZD2ImuVjwwC0l7qImbXL2TGbpJgIA9Tsov27d0T00rMb2lgb9
-   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_51RoQy4QySUyergnh9kX0h2x8HSbmGp4PXy1qSdP1sOheWrdWqBqtmc2K3nk1oLCR3vnZpBv2aBrCcY8np8Megkvh00XQlmYbX2
+   STRIPE_SECRET_KEY=
+   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
    ```
 3. ✅ Development server running: `npm run dev`
 

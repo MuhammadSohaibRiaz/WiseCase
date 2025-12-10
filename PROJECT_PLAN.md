@@ -1,7 +1,7 @@
 # WiseCase - Complete Project Plan & Progress Tracker
 
-**Last Updated**: December 4, 2024 — Chat & Notifications Release  
-**Project Status**: Phase 2 In Progress (Messaging + Notifications Complete)
+**Last Updated**: December 10, 2025 — Payments + Cases + Profiles Refresh  
+**Project Status**: Phase 2 In Progress (Messaging + Notifications + Cases + Payments live)
 
 ---
 
@@ -139,16 +139,14 @@ WiseCase is an AI-driven web-based platform for lawyer discovery, appointment bo
 
 ### Phase 2: Communication & Case Management
 
-#### 🟡 Module 7: Cases Management
-- [ ] Client case dashboard (`/client/cases`)
-- [ ] Lawyer case management (`/lawyer/cases`)
-- [ ] Case status tracking (open, in_progress, completed, closed)
-- [ ] Case notes and timeline
-- [ ] Case document attachments
-- [ ] Case activity log
-- **Status**: Basic structure exists, needs full implementation
-- **Priority**: HIGH
-- **Estimated Time**: 1-2 days
+#### ✅ Module 7: Cases Management
+- [x] Client case dashboard (`/client/cases`) with Supabase data + realtime
+- [x] Lawyer case management (`/lawyer/cases`) with filters + realtime
+- [x] Case status tracking (open, in_progress, completed, closed) with notifications
+- [x] Case detail pages for client & lawyer (appointments, documents, timeline)
+- [x] Case activity timeline (status changes, appointments, docs)
+- [x] Cases navigation + ActiveCases widget backed by Supabase
+- **Status**: Complete — December 10, 2025
 
 ---
 
@@ -156,18 +154,19 @@ WiseCase is an AI-driven web-based platform for lawyer discovery, appointment bo
 
 ### Phase 3: Financial & Feedback
 
-#### ❌ Module 8: Payments & Invoices
-- [ ] Stripe integration setup
-- [ ] Payment processing for appointments
-- [ ] Invoice generation and tracking
-- [ ] Payment history and receipts
-- [ ] Dispute handling
-- [ ] Refund processing
-- **Status**: Not started
-- **Priority**: MEDIUM
-- **Estimated Time**: 2-3 days
+#### 🟡 Module 8: Payments
+- [x] Stripe integration (Checkout + Webhooks)
+- [x] Awaiting payment → scheduled flow, badges, toasts, realtime
+- [x] Payment records stored in `payments` table
+- [x] Notifications for payment success/failure (client & lawyer)
+- [ ] Payment history UI (client) — pending
+- [ ] Earnings summary UI (lawyer) — pending
+- [ ] Refund/dispute handling — pending
+- **Status**: In Progress
+- **Priority**: HIGH
+- **Estimated Time**: 1-2 days
 
-#### ❌ Module 9: Reviews & Ratings
+#### 🟡 Module 9: Reviews & Ratings
 - [ ] Client review submission after case completion
 - [ ] Rating system (1-5 stars)
 - [ ] Review moderation

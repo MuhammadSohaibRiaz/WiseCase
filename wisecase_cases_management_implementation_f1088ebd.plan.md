@@ -4,34 +4,34 @@ overview: Complete the Cases Management module (Module 7) by implementing full S
 todos:
   - id: client-cases-page
     content: Replace dummy data in app/client/cases/page.tsx with Supabase query, add real-time subscriptions, and implement case status badges
-    status: pending
+    status: completed
   - id: lawyer-cases-page
     content: Create app/lawyer/cases/page.tsx with Supabase integration, status filters, and case management actions
-    status: pending
+    status: completed
   - id: update-active-cases
     content: Update components/lawyer/active-cases.tsx to fetch real data from Supabase instead of dummy data
-    status: pending
+    status: completed
   - id: lawyer-sidebar-cases
     content: Add Cases navigation item to components/lawyer/sidebar.tsx linking to /lawyer/cases
-    status: pending
+    status: completed
   - id: client-case-detail
     content: Create app/client/cases/[id]/page.tsx with case info, appointments, messages link, and documents section
-    status: pending
+    status: completed
     dependencies:
       - client-cases-page
   - id: lawyer-case-detail
     content: Create app/lawyer/cases/[id]/page.tsx with case info, status management, appointments, and documents
-    status: pending
+    status: completed
     dependencies:
       - lawyer-cases-page
   - id: case-status-management
     content: Implement case status update functionality with notifications and real-time updates
-    status: pending
+    status: completed
     dependencies:
       - lawyer-case-detail
   - id: case-activity-timeline
     content: Add activity timeline to case detail pages showing status changes, appointments, and document uploads
-    status: pending
+    status: completed
     dependencies:
       - client-case-detail
       - lawyer-case-detail
