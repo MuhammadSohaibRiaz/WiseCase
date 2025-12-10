@@ -163,10 +163,11 @@ export default function LawyerProfilePage() {
 
       if (updateError) throw updateError
 
-      // Reload profile from database
+      // Reload profile from database to ensure sync
       const { data: profileData } = await supabase.from("profiles").select("*").eq("id", user.id).single()
       if (profileData) {
         setProfile(profileData)
+        console.log("[Profile] Profile picture synced from database")
       }
 
       toast({
@@ -217,7 +218,7 @@ export default function LawyerProfilePage() {
 
       if (lawyerError) throw lawyerError
 
-      // Reload data from Supabase to ensure consistency
+      // Reload data from Supabase to ensure consistency and sync
       const [profileResult, lawyerResult] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", user.id).single(),
         supabase.from("lawyer_profiles").select("*").eq("id", user.id).single(),
@@ -234,6 +235,7 @@ export default function LawyerProfilePage() {
           licenseNumber: profileResult.data.bar_license_number || "",
           bio: profileResult.data.bio || "",
         }))
+        console.log("[Profile] Profile data synced from database")
       }
 
       if (lawyerResult.data) {
@@ -248,6 +250,7 @@ export default function LawyerProfilePage() {
         if (lawyerResult.data.specializations) {
           setSpecializations(lawyerResult.data.specializations)
         }
+        console.log("[Profile] Lawyer profile data synced from database")
       }
 
       toast({
@@ -291,11 +294,24 @@ export default function LawyerProfilePage() {
 
       if (lawyerData?.specializations) {
         setSpecializations(lawyerData.specializations)
+        console.log("[Profile] Specializations synced from database:", lawyerData.specializations)
+      }
+
+      // Reload full lawyer profile to ensure sync
+      const { data: updatedLawyerProfile } = await supabase
+        .from("lawyer_profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single()
+
+      if (updatedLawyerProfile) {
+        setLawyerProfile(updatedLawyerProfile)
+        console.log("[Profile] Lawyer profile fully synced after specialization update")
       }
 
       toast({
-        title: "✅ Success",
-        description: "Your specializations have been updated successfully!",
+        title: "Success",
+        description: "Your specializations have been updated and saved to the database.",
       })
     } catch (error: any) {
       console.error("Error updating specializations:", error)

@@ -43,6 +43,18 @@ export function LawyerSidebar({ onNavigate }: LawyerSidebarProps) {
             <MessageSquare className="h-4 w-4 mr-2" />
             Messages
           </Button>
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-xs md:text-sm"
+            size="sm"
+            onClick={() => {
+              router.push("/lawyer/cases")
+              onNavigate?.()
+            }}
+          >
+            <Briefcase className="h-4 w-4 mr-2" />
+            Cases
+          </Button>
         </div>
       </Card>
       {/* Profile Navigation */}

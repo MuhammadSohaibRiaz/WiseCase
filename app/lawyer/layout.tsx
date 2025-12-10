@@ -1,17 +1,24 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, useMemo } from "react"
+import { useRouter, usePathname } from "next/navigation"
 import { Menu, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LawyerSidebar } from "@/components/lawyer/sidebar"
 import { createClient } from "@/lib/supabase/client"
+import { ProgressBar } from "@/components/progress-bar"
 
 export default function LawyerLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const router = useRouter()
+  const pathname = usePathname()
   const [isLoading, setIsLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+
+  // All hooks must be called before any conditional returns
+  const toggleSidebar = useMemo(() => () => setSidebarOpen((prev) => !prev), [])
+  const closeSidebar = useMemo(() => () => setSidebarOpen(false), [])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -33,6 +40,7 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
         return
       }
 
+      setIsAuthenticated(true)
       const handleResize = () => {
         if (window.innerWidth >= 768) {
           setSidebarOpen(true)
@@ -50,6 +58,22 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
     checkAuth()
   }, [router])
 
+  // Only re-check auth on pathname change if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated && !isLoading) {
+      const checkAuth = async () => {
+        const supabase = createClient()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (!session) {
+          router.push("/auth/lawyer/sign-in")
+        }
+      }
+      checkAuth()
+    }
+  }, [pathname, isAuthenticated, isLoading, router])
+
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -62,12 +86,14 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Button
+    <>
+      <ProgressBar />
+      <div className="min-h-screen bg-background">
+        <Button
         variant="ghost"
         size="icon"
         className="fixed top-4 right-4 z-50 md:hidden bg-background border shadow-sm"
-        onClick={() => setSidebarOpen(!sidebarOpen)}
+        onClick={toggleSidebar}
       >
         {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </Button>
@@ -76,7 +102,7 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
         className={`fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity ${
           sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
-        onClick={() => setSidebarOpen(false)}
+        onClick={closeSidebar}
       />
 
       <aside
@@ -85,11 +111,16 @@ export default function LawyerLayout({ children }: { children: React.ReactNode }
         } w-64 overflow-y-auto`}
       >
         <div className="p-4 pt-16">
-          <LawyerSidebar onNavigate={() => setSidebarOpen(false)} />
+          <LawyerSidebar onNavigate={closeSidebar} />
         </div>
       </aside>
 
-      <main className="w-full">{children}</main>
+      {/* Only main content re-renders on navigation */}
+      <main key={pathname} className="w-full">{children}</main>
     </div>
+    </>
   )
 }
+
+
+

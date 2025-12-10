@@ -1,63 +1,49 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { usePathname } from "next/navigation"
 
 export function ProgressBar() {
   const [progress, setProgress] = useState(0)
   const [isVisible, setIsVisible] = useState(false)
+  const pathname = usePathname()
 
   useEffect(() => {
-    // Listen for navigation events
-    const handleStart = () => {
-      setIsVisible(true)
-      setProgress(10)
-    }
+    // Reset and start progress on route change
+    setIsVisible(true)
+    setProgress(10)
 
-    const handleEnd = () => {
+    // Simulate progress increment
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev
+        return Math.min(prev + Math.random() * 15, 90)
+      })
+    }, 100)
+
+    // Complete progress when route change is done
+    const timer = setTimeout(() => {
       setProgress(100)
       setTimeout(() => {
         setIsVisible(false)
         setProgress(0)
-      }, 300)
-    }
-
-    // Track popstate for back/forward navigation
-    window.addEventListener("popstate", handleStart)
-
-    // Simulate progress increment during navigation
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) return prev
-        return prev + Math.random() * 30
-      })
-    }, 200)
+      }, 200)
+    }, 300)
 
     return () => {
       clearInterval(interval)
-      window.removeEventListener("popstate", handleStart)
+      clearTimeout(timer)
     }
-  }, [])
-
-  // Complete progress bar on load
-  useEffect(() => {
-    if (isVisible) {
-      const timer = setTimeout(() => {
-        setProgress(100)
-        setTimeout(() => {
-          setIsVisible(false)
-          setProgress(0)
-        }, 300)
-      }, 500)
-      return () => clearTimeout(timer)
-    }
-  }, [isVisible])
+  }, [pathname])
 
   if (!isVisible) return null
 
   return (
-    <div
-      className="fixed top-0 left-0 h-1 bg-gradient-to-r from-blue-500 to-purple-500 z-50 transition-all duration-300"
-      style={{ width: `${progress}%` }}
-    />
+    <div className="fixed top-0 left-0 right-0 h-1 z-[9999] bg-transparent pointer-events-none">
+      <div
+        className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 transition-all duration-300 ease-out shadow-lg"
+        style={{ width: `${progress}%` }}
+      />
+    </div>
   )
 }

@@ -52,8 +52,9 @@ export function LawyerDashboardHeader() {
   }
 
   const handlePublicView = () => {
+    // Open in new tab to show client view
     if (profile?.id) {
-      router.push(`/client/lawyer/${profile.id}`)
+      window.open(`/client/lawyer/${profile.id}`, "_blank")
     }
   }
 

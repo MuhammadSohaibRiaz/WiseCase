@@ -1,17 +1,27 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
-import { Loader2, AlertCircle, Calendar, Clock, FileText } from "lucide-react"
+import { Loader2, AlertCircle, Calendar, Clock, FileText, CreditCard, CheckCircle2 } from "lucide-react"
 import { notifyAppointmentUpdate } from "@/lib/notifications"
+import { PaymentButton } from "@/components/payments/payment-button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 
 interface Appointment {
   id: string
   scheduled_at: string
   duration_minutes: number
-  status: "pending" | "scheduled" | "completed" | "cancelled" | "rescheduled" | "rejected"
+  status: "pending" | "awaiting_payment" | "scheduled" | "completed" | "cancelled" | "rescheduled" | "rejected"
   case: {
     title: string
     case_type: string
@@ -30,8 +40,34 @@ export default function ClientAppointmentsPage() {
   const [error, setError] = useState<string | null>(null)
   const [clientId, setClientId] = useState<string | null>(null)
   const { toast } = useToast()
+  const searchParams = useSearchParams()
 
   useEffect(() => {
+    // Check for payment success/failure in URL params
+    const paymentStatus = searchParams.get("payment")
+    const sessionId = searchParams.get("session_id")
+    
+    if (paymentStatus === "success" && sessionId) {
+      console.log("[Client Appointments] Payment success detected, session_id:", sessionId)
+      toast({
+        title: "Payment Successful",
+        description: "Your appointment has been confirmed. Refreshing...",
+      })
+      // Refresh appointments after a short delay to allow webhook to process
+      setTimeout(() => {
+        window.location.href = "/client/appointments"
+      }, 2000)
+      return
+    } else if (paymentStatus === "cancelled") {
+      toast({
+        title: "Payment Cancelled",
+        description: "Your appointment is still awaiting payment.",
+        variant: "default",
+      })
+      // Clean URL
+      window.history.replaceState({}, "", "/client/appointments")
+    }
+
     const fetchAppointments = async () => {
       try {
         setIsLoading(true)
@@ -53,8 +89,10 @@ export default function ClientAppointmentsPage() {
             duration_minutes,
             status,
             cases (
+              id,
               title,
-              case_type
+              case_type,
+              hourly_rate
             ),
             profiles!appointments_lawyer_id_fkey (
               id,
@@ -69,16 +107,22 @@ export default function ClientAppointmentsPage() {
 
         if (fetchError) throw fetchError
 
-        setAppointments(
-          (data || []).map((apt: any) => ({
-            id: apt.id,
-            scheduled_at: apt.scheduled_at,
-            duration_minutes: apt.duration_minutes,
-            status: apt.status,
-            case: apt.cases || {},
-            lawyer: apt.profiles || {},
-          })),
-        )
+        const mappedAppointments = (data || []).map((apt: any) => ({
+          id: apt.id,
+          scheduled_at: apt.scheduled_at,
+          duration_minutes: apt.duration_minutes,
+          status: apt.status || "pending",
+          case: apt.cases || { id: "", title: "", case_type: "", hourly_rate: null },
+          lawyer: apt.profiles || {},
+        }))
+        
+        console.log("[Client Appointments] Loaded appointments:", mappedAppointments.map(apt => ({
+          id: apt.id,
+          status: apt.status,
+          case: apt.case.title
+        })))
+        
+        setAppointments(mappedAppointments)
       } catch (error) {
         console.error("[v0] Fetch error:", error)
         setError("Failed to load appointments")
@@ -93,7 +137,54 @@ export default function ClientAppointmentsPage() {
     }
 
     fetchAppointments()
-  }, [toast])
+  }, [toast, searchParams])
+
+  // Set up real-time subscription for appointment updates
+  useEffect(() => {
+    if (!clientId) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`appointments-client-${clientId}-${Date.now()}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "appointments",
+          filter: `client_id=eq.${clientId}`,
+        },
+        (payload) => {
+          const updatedAppointment = payload.new as any
+          setAppointments((prev) =>
+            prev.map((apt) => (apt.id === updatedAppointment.id ? { ...apt, status: updatedAppointment.status } : apt)),
+          )
+          if (updatedAppointment.status === "awaiting_payment") {
+            toast({
+              title: "Payment Required",
+              description: "Your appointment has been approved. Please complete payment to confirm your booking.",
+            })
+          } else if (updatedAppointment.status === "scheduled") {
+            toast({
+              title: "Appointment Confirmed",
+              description: "Your payment was successful and your appointment is now confirmed.",
+            })
+          }
+        },
+      )
+      .subscribe((status) => {
+        console.log(`[Client Appointments] Realtime subscription status: ${status} for client ${clientId}`)
+        if (status === "SUBSCRIBED") {
+          console.log(`[Client Appointments] ✅ Successfully subscribed to appointment updates for client ${clientId}`)
+        } else if (status === "CHANNEL_ERROR") {
+          console.error(`[Client Appointments] ❌ Channel error for client ${clientId}`)
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [clientId, toast])
 
   const handleCancelAppointment = async (appointmentId: string) => {
     try {
@@ -121,8 +212,8 @@ export default function ClientAppointmentsPage() {
       }
 
       toast({
-        title: "Success",
-        description: "Appointment cancelled successfully.",
+        title: "Appointment Cancelled",
+        description: "Your appointment has been cancelled successfully.",
       })
     } catch (error) {
       console.error("[v0] Cancel error:", error)
@@ -182,15 +273,17 @@ export default function ClientAppointmentsPage() {
               className={`rounded-lg border ${
                 appointment.status === "cancelled"
                   ? "border-red-200 bg-red-50/50 dark:bg-red-950/20 dark:border-red-900/50 opacity-75"
-                  : appointment.status === "pending"
+                  :                     appointment.status === "pending"
                     ? "border-orange-200 bg-orange-50/30 dark:bg-orange-950/20 dark:border-orange-800/50"
-                    : appointment.status === "scheduled"
-                      ? "border-blue-200 bg-blue-50/30 dark:bg-blue-950/20 dark:border-blue-800/50 shadow-sm"
-                      : appointment.status === "completed"
-                        ? "border-green-200 bg-green-50/30 dark:bg-green-950/20 dark:border-green-800/50"
-                        : appointment.status === "rejected"
-                          ? "border-red-200 bg-red-50/30 dark:bg-red-950/20 dark:border-red-800/50"
-                          : "border-border bg-card"
+                    : appointment.status === "awaiting_payment"
+                      ? "border-yellow-200 bg-yellow-50/30 dark:bg-yellow-950/20 dark:border-yellow-800/50 shadow-sm"
+                      : appointment.status === "scheduled"
+                        ? "border-blue-200 bg-blue-50/30 dark:bg-blue-950/20 dark:border-blue-800/50 shadow-sm"
+                        : appointment.status === "completed"
+                          ? "border-green-200 bg-green-50/30 dark:bg-green-950/20 dark:border-green-800/50"
+                          : appointment.status === "rejected"
+                            ? "border-red-200 bg-red-50/30 dark:bg-red-950/20 dark:border-red-800/50"
+                            : "border-border bg-card"
               } p-6 transition-all hover:shadow-md`}
             >
               <div className="flex items-start justify-between gap-4">
@@ -266,24 +359,81 @@ export default function ClientAppointmentsPage() {
                     className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
                       appointment.status === "pending"
                         ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-200 dark:border-orange-800"
-                        : appointment.status === "scheduled"
-                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
-                          : appointment.status === "completed"
-                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border border-green-200 dark:border-green-800"
-                            : appointment.status === "rejected"
-                              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-200 dark:border-red-800"
-                              : appointment.status === "cancelled"
-                                ? "bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400 border border-gray-200 dark:border-gray-700"
-                                : "bg-gray-100 text-gray-700 dark:bg-gray-800/30 dark:text-gray-300"
+                        : appointment.status === "awaiting_payment"
+                          ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800"
+                          : appointment.status === "scheduled"
+                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                            : appointment.status === "completed"
+                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border border-green-200 dark:border-green-800"
+                              : appointment.status === "rejected"
+                                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-200 dark:border-red-800"
+                                : appointment.status === "cancelled"
+                                  ? "bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400 border border-gray-200 dark:border-gray-700"
+                                  : "bg-gray-100 text-gray-700 dark:bg-gray-800/30 dark:text-gray-300"
                     }`}
                   >
-                    {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
+                    {appointment.status === "awaiting_payment"
+                      ? "Awaiting Payment"
+                      : appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1).replace(/_/g, " ")}
                   </span>
 
+                  {appointment.status === "awaiting_payment" && (
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button size="sm" className="gap-2">
+                          <CreditCard className="h-4 w-4" />
+                          Proceed to Payment
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>Complete Payment</DialogTitle>
+                          <DialogDescription>
+                            Your consultation request has been approved. Please complete payment to confirm your
+                            booking.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="rounded-lg border bg-muted/50 p-4">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Consultation Fee:</span>
+                              <span className="font-semibold">
+                                $
+                                {(
+                                  ((appointment.case.hourly_rate || 0) * appointment.duration_minutes) /
+                                  60
+                                ).toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="mt-2 text-xs text-muted-foreground">
+                              {appointment.duration_minutes} minutes @ $
+                              {appointment.case.hourly_rate || 0}/hour
+                            </div>
+                          </div>
+                          <PaymentButton
+                            appointmentId={appointment.id}
+                            amount={
+                              ((appointment.case.hourly_rate || 0) * appointment.duration_minutes) / 60
+                            }
+                            onPaymentSuccess={() => {
+                              // Refresh appointments
+                              window.location.reload()
+                            }}
+                          />
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  )}
                   {appointment.status === "scheduled" && (
-                    <Button variant="destructive" size="sm" onClick={() => handleCancelAppointment(appointment.id)}>
-                      Cancel
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span className="font-medium">Paid</span>
+                      </div>
+                      <Button variant="destructive" size="sm" onClick={() => handleCancelAppointment(appointment.id)}>
+                        Cancel
+                      </Button>
+                    </div>
                   )}
                   {appointment.status === "pending" && (
                     <p className="text-xs text-muted-foreground text-right">Waiting for lawyer response</p>

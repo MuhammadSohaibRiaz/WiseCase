@@ -41,6 +41,41 @@ export default function ClientSignInPage() {
         } else {
           setError(signInError.message)
         }
+        setIsLoading(false)
+        return
+      }
+
+      // Get the user from session after successful sign-in
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        setError("Failed to verify account. Please try again.")
+        setIsLoading(false)
+        return
+      }
+
+      // Verify user_type is client
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("user_type")
+        .eq("id", user.id)
+        .single()
+
+      if (profileError || !profile) {
+        setError("Failed to verify account. Please try again.")
+        await supabase.auth.signOut()
+        setIsLoading(false)
+        return
+      }
+
+      if (profile.user_type !== "client") {
+        await supabase.auth.signOut()
+        setError(
+          profile.user_type === "lawyer"
+            ? "This is a lawyer account. Please use the lawyer sign-in page."
+            : "Invalid account type. Please contact support.",
+        )
+        setIsLoading(false)
         return
       }
 

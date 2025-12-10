@@ -1,11 +1,12 @@
 "use client"
 
 import type React from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { ClientSidebar } from "@/components/client/sidebar"
 import { ClientHeader } from "@/components/client/header"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { ProgressBar } from "@/components/progress-bar"
 
 export default function ClientLayout({
   children,
@@ -14,7 +15,12 @@ export default function ClientLayout({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const router = useRouter()
+  const pathname = usePathname()
   const [isLoading, setIsLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+
+  // All hooks must be called before any conditional returns
+  const toggleSidebar = useMemo(() => () => setSidebarOpen((prev) => !prev), [])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -36,6 +42,7 @@ export default function ClientLayout({
         return
       }
 
+      setIsAuthenticated(true)
       // Set initial state based on screen size
       const handleResize = () => {
         if (window.innerWidth >= 768) {
@@ -52,6 +59,22 @@ export default function ClientLayout({
     checkAuth()
   }, [router])
 
+  // Only re-check auth on pathname change if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated && !isLoading) {
+      const checkAuth = async () => {
+        const supabase = createClient()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (!session) {
+          router.push("/auth/client/sign-in")
+        }
+      }
+      checkAuth()
+    }
+  }, [pathname, isAuthenticated, isLoading, router])
+
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -64,20 +87,26 @@ export default function ClientLayout({
   }
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      {/* Sidebar */}
-      <ClientSidebar open={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
+    <>
+      <ProgressBar />
+      <div className="flex h-screen bg-background overflow-hidden">
+        {/* Sidebar */}
+        <ClientSidebar open={sidebarOpen} onToggle={toggleSidebar} />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <ClientHeader onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
+        <ClientHeader onMenuClick={toggleSidebar} />
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-auto">
+        {/* Page Content - Only this section re-renders on navigation */}
+        <main key={pathname} className="flex-1 overflow-auto">
           <div className="p-4 md:p-6 lg:p-8">{children}</div>
         </main>
       </div>
     </div>
+    </>
   )
 }
+
+
+

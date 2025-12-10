@@ -1,44 +1,256 @@
-import type { Metadata } from "next"
+"use client"
+
+import { useEffect, useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
+import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { MessageSquare, Eye, Star } from "lucide-react"
+import { MessageSquare, Eye, Star, Loader2, AlertCircle, Briefcase } from "lucide-react"
+import type { Metadata } from "next"
 
-export const metadata: Metadata = {
-  title: "My Cases — Smart Lawyer Booking System",
-  description: "View and manage all your legal cases and consultations.",
+interface Case {
+  id: string
+  title: string
+  description: string | null
+  status: "open" | "in_progress" | "completed" | "closed"
+  case_type: string | null
+  hourly_rate: number | null
+  created_at: string
+  updated_at: string
+  lawyer: {
+    id: string
+    first_name: string | null
+    last_name: string | null
+    avatar_url: string | null
+  } | null
+  next_appointment?: {
+    id: string
+    scheduled_at: string
+    status: string
+  } | null
+  total_payments?: number
+}
+
+const statusConfig: Record<Case["status"], { label: string; className: string }> = {
+  open: {
+    label: "Open",
+    className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800",
+  },
+  in_progress: {
+    label: "In Progress",
+    className: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-200 dark:border-orange-800",
+  },
+  completed: {
+    label: "Completed",
+    className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border border-green-200 dark:border-green-800",
+  },
+  closed: {
+    label: "Closed",
+    className: "bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400 border border-gray-200 dark:border-gray-700",
+  },
 }
 
 export default function MyCasesPage() {
-  const cases = [
-    {
-      id: 1,
-      title: "Property Dispute Resolution",
-      lawyer: "Ahmed Hassan",
-      status: "In Progress",
-      payment: "PKR 50,000",
-      lastUpdate: "2 days ago",
-      statusColor: "bg-blue-100 text-blue-800",
-    },
-    {
-      id: 2,
-      title: "Contract Review & Negotiation",
-      lawyer: "Fatima Khan",
-      status: "Pending",
-      payment: "PKR 35,000",
-      lastUpdate: "5 days ago",
-      statusColor: "bg-yellow-100 text-yellow-800",
-    },
-    {
-      id: 3,
-      title: "Family Law Consultation",
-      lawyer: "Ali Raza",
-      status: "Completed",
-      payment: "PKR 25,000",
-      lastUpdate: "2 weeks ago",
-      statusColor: "bg-green-100 text-green-800",
-    },
-  ]
+  const [cases, setCases] = useState<Case[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [clientId, setClientId] = useState<string | null>(null)
+  const { toast } = useToast()
+  const router = useRouter()
+
+  const fetchCases = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      const supabase = createClient()
+
+      const { data: sessionData } = await supabase.auth.getSession()
+      if (!sessionData.session?.user?.id) {
+        setError("Not authenticated")
+        return
+      }
+      setClientId(sessionData.session.user.id)
+
+      // Fetch cases with lawyer info and next appointment
+      const { data, error: fetchError } = await supabase
+        .from("cases")
+        .select(
+          `
+          id,
+          title,
+          description,
+          status,
+          case_type,
+          hourly_rate,
+          created_at,
+          updated_at,
+          lawyer_id,
+          lawyer:profiles!cases_lawyer_id_fkey (
+            id,
+            first_name,
+            last_name,
+            avatar_url
+          )
+        `,
+        )
+        .eq("client_id", sessionData.session.user.id)
+        .order("updated_at", { ascending: false })
+
+      if (fetchError) throw fetchError
+
+      // Fetch next appointments for each case
+      const caseIds = (data || []).map((c: any) => c.id)
+      let appointmentsMap: Record<string, any> = {}
+
+      if (caseIds.length > 0) {
+        const { data: appointmentsData } = await supabase
+          .from("appointments")
+          .select("id, case_id, scheduled_at, status")
+          .in("case_id", caseIds)
+          .in("status", ["pending", "scheduled"])
+          .order("scheduled_at", { ascending: true })
+
+        if (appointmentsData) {
+          appointmentsData.forEach((apt) => {
+            if (!appointmentsMap[apt.case_id]) {
+              appointmentsMap[apt.case_id] = apt
+            }
+          })
+        }
+      }
+
+      // Fetch total payments for each case
+      let paymentsMap: Record<string, number> = {}
+      if (caseIds.length > 0) {
+        const { data: paymentsData } = await supabase
+          .from("payments")
+          .select("case_id, amount, status")
+          .in("case_id", caseIds)
+          .eq("status", "completed")
+
+        if (paymentsData) {
+          paymentsData.forEach((payment) => {
+            paymentsMap[payment.case_id] = (paymentsMap[payment.case_id] || 0) + Number(payment.amount)
+          })
+        }
+      }
+
+      // Map the data
+      const mappedCases: Case[] = (data || []).map((c: any) => ({
+        id: c.id,
+        title: c.title,
+        description: c.description,
+        status: c.status,
+        case_type: c.case_type,
+        hourly_rate: c.hourly_rate,
+        created_at: c.created_at,
+        updated_at: c.updated_at,
+        lawyer: c.lawyer || null,
+        next_appointment: appointmentsMap[c.id] || null,
+        total_payments: paymentsMap[c.id] || 0,
+      }))
+
+      setCases(mappedCases)
+      setError(null)
+    } catch (error) {
+      console.error("[v0] Fetch error:", error)
+      setError("Failed to load cases")
+      toast({
+        title: "Error",
+        description: "Failed to load your cases.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => {
+    fetchCases()
+
+    // Set up real-time subscription
+    const setupRealtime = async () => {
+      const supabase = createClient()
+      const { data: sessionData } = await supabase.auth.getSession()
+
+      if (!sessionData.session?.user?.id) return null
+
+      const channel = supabase
+        .channel(`cases-updates-${sessionData.session.user.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "cases",
+            filter: `client_id=eq.${sessionData.session.user.id}`,
+          },
+          () => {
+            fetchCases()
+          },
+        )
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(channel)
+      }
+    }
+
+    let cleanup: (() => void) | null = null
+    setupRealtime().then((fn) => {
+      cleanup = fn
+    })
+
+    return () => {
+      if (cleanup) cleanup()
+    }
+  }, [fetchCases])
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffTime = Math.abs(now.getTime() - date.getTime())
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+    if (diffDays === 0) return "Today"
+    if (diffDays === 1) return "Yesterday"
+    if (diffDays < 7) return `${diffDays} days ago`
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
+    return `${Math.floor(diffDays / 30)} months ago`
+  }
+
+  if (isLoading) {
+    return (
+      <main className="space-y-8">
+        <div>
+          <h1 className="text-3xl font-bold">My Cases</h1>
+          <p className="text-muted-foreground mt-2">Track your ongoing and past legal consultations</p>
+        </div>
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </main>
+    )
+  }
+
+  if (error && cases.length === 0) {
+    return (
+      <main className="space-y-8">
+        <div>
+          <h1 className="text-3xl font-bold">My Cases</h1>
+          <p className="text-muted-foreground mt-2">Track your ongoing and past legal consultations</p>
+        </div>
+        <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+          <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-600" />
+          <div>
+            <h2 className="font-semibold text-red-900">Error</h2>
+            <p className="text-sm text-red-700">{error}</p>
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main className="space-y-8">
@@ -47,52 +259,85 @@ export default function MyCasesPage() {
         <p className="text-muted-foreground mt-2">Track your ongoing and past legal consultations</p>
       </div>
 
-      <div className="space-y-4">
-        {cases.map((caseItem) => (
-          <Card key={caseItem.id} className="hover:shadow-md transition-shadow">
-            <CardContent className="pt-6">
-              <div className="grid gap-4 md:grid-cols-5 items-center">
-                <div>
-                  <h3 className="font-semibold">{caseItem.title}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">with {caseItem.lawyer}</p>
-                </div>
+      {cases.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+          <Briefcase className="mx-auto h-12 w-12 text-muted-foreground/40" />
+          <h3 className="mt-4 font-semibold">No cases yet</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Book an appointment to create your first case</p>
+          <a href="/match" className="mt-4 inline-block">
+            <Button>Find a Lawyer</Button>
+          </a>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {cases.map((caseItem) => {
+            const statusInfo = statusConfig[caseItem.status]
+            const lawyerName = caseItem.lawyer
+              ? `${caseItem.lawyer.first_name || ""} ${caseItem.lawyer.last_name || ""}`.trim() || "Unknown Lawyer"
+              : "No lawyer assigned"
 
-                <div>
-                  <p className="text-xs text-muted-foreground">Status</p>
-                  <Badge className={caseItem.statusColor}>{caseItem.status}</Badge>
-                </div>
+            return (
+              <Card key={caseItem.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="pt-6">
+                  <div className="grid gap-4 md:grid-cols-5 items-center">
+                    <div className="md:col-span-2">
+                      <h3 className="font-semibold">{caseItem.title}</h3>
+                      <p className="text-sm text-muted-foreground mt-1">with {lawyerName}</p>
+                      {caseItem.case_type && (
+                        <p className="text-xs text-muted-foreground mt-1">Type: {caseItem.case_type}</p>
+                      )}
+                    </div>
 
-                <div>
-                  <p className="text-xs text-muted-foreground">Payment</p>
-                  <p className="font-medium">{caseItem.payment}</p>
-                </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Status</p>
+                      <Badge className={`mt-1 ${statusInfo.className}`}>{statusInfo.label}</Badge>
+                    </div>
 
-                <div>
-                  <p className="text-xs text-muted-foreground">Last Update</p>
-                  <p className="text-sm">{caseItem.lastUpdate}</p>
-                </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Last Update</p>
+                      <p className="text-sm">{formatDate(caseItem.updated_at)}</p>
+                      {caseItem.next_appointment && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Next: {new Date(caseItem.next_appointment.scheduled_at).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
 
-                <div className="flex gap-2 justify-end">
-                  <Button variant="outline" size="sm">
-                    <Eye className="h-4 w-4 mr-1" />
-                    View
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <MessageSquare className="h-4 w-4 mr-1" />
-                    Message
-                  </Button>
-                  {caseItem.status === "Completed" && (
-                    <Button variant="outline" size="sm">
-                      <Star className="h-4 w-4 mr-1" />
-                      Review
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                    <div className="flex gap-2 justify-end flex-wrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => router.push(`/client/cases/${caseItem.id}`)}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        View
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => router.push(`/client/messages?case=${caseItem.id}`)}
+                      >
+                        <MessageSquare className="h-4 w-4 mr-1" />
+                        Message
+                      </Button>
+                      {caseItem.status === "completed" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => router.push(`/client/reviews?case=${caseItem.id}`)}
+                        >
+                          <Star className="h-4 w-4 mr-1" />
+                          Review
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
     </main>
   )
 }

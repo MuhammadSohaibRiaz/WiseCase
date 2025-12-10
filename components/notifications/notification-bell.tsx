@@ -19,7 +19,7 @@ type NotificationRecord = {
   id: string
   title: string
   description?: string | null
-  type: "message" | "appointment_request" | "appointment_update" | "case_update"
+  type: "system" | "message" | "appointment_request" | "appointment_update" | "case_update" | "payment_update"
   data?: Record<string, any> | null
   is_read: boolean
   created_at: string
@@ -59,6 +59,7 @@ export function NotificationBell({ className }: { className?: string }) {
 
   const loadNotifications = useCallback(
     async (uid: string) => {
+      console.log(`[Notifications] Loading notifications for user: ${uid}`)
       const { data, error } = await supabase
         .from("notifications")
         .select("*")
@@ -67,27 +68,40 @@ export function NotificationBell({ className }: { className?: string }) {
         .limit(25)
 
       if (error) {
-        console.error("[v0] Notification fetch error:", error)
+        console.error("[Notifications] Fetch error:", error)
         return
       }
 
+      console.log(`[Notifications] Loaded ${data?.length || 0} notifications`)
       setNotifications(data || [])
-      setUnreadCount((data || []).filter((notification) => !notification.is_read).length)
+      const unread = (data || []).filter((notification) => !notification.is_read).length
+      console.log(`[Notifications] Unread count: ${unread}`)
+      setUnreadCount(unread)
     },
     [supabase],
   )
 
   useEffect(() => {
     const init = async () => {
+      console.log("[Notifications] Initializing notification bell...")
       const {
         data: { user },
+        error: authError,
       } = await supabase.auth.getUser()
 
-      if (!user?.id) {
+      if (authError) {
+        console.error("[Notifications] Auth error:", authError)
         setIsLoading(false)
         return
       }
 
+      if (!user?.id) {
+        console.warn("[Notifications] No user found")
+        setIsLoading(false)
+        return
+      }
+
+      console.log(`[Notifications] User authenticated: ${user.id}`)
       setUserId(user.id)
       await loadNotifications(user.id)
       setIsLoading(false)
@@ -100,17 +114,76 @@ export function NotificationBell({ className }: { className?: string }) {
     if (!userId) return
 
     const channel = supabase
-      .channel(`notifications-${userId}`)
+      .channel(`notifications-${userId}-${Date.now()}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+        { 
+          event: "INSERT", 
+          schema: "public", 
+          table: "notifications", 
+          filter: `user_id=eq.${userId}` 
+        },
         (payload) => {
+          console.log("[Notifications] 📬 New notification received:", payload)
           const newNotification = payload.new as NotificationRecord
-          setNotifications((prev) => [newNotification, ...prev].slice(0, 25))
-          setUnreadCount((count) => count + 1)
+          console.log("[Notifications] Notification details:", {
+            id: newNotification.id,
+            title: newNotification.title,
+            type: newNotification.type,
+            is_read: newNotification.is_read,
+          })
+          setNotifications((prev) => {
+            // Check if notification already exists (prevent duplicates)
+            if (prev.find((n) => n.id === newNotification.id)) {
+              console.log("[Notifications] ⚠️ Duplicate notification ignored:", newNotification.id)
+              return prev
+            }
+            console.log("[Notifications] ✅ Adding new notification to list")
+            return [newNotification, ...prev].slice(0, 25)
+          })
+          if (!newNotification.is_read) {
+            console.log("[Notifications] 🔔 Incrementing unread count")
+            setUnreadCount((count) => {
+              const newCount = count + 1
+              console.log(`[Notifications] Unread count: ${count} → ${newCount}`)
+              return newCount
+            })
+          }
         },
       )
-      .subscribe()
+      .on(
+        "postgres_changes",
+        { 
+          event: "UPDATE", 
+          schema: "public", 
+          table: "notifications", 
+          filter: `user_id=eq.${userId}` 
+        },
+        (payload) => {
+          const updatedNotification = payload.new as NotificationRecord
+          setNotifications((prev) => {
+            const updated = prev.map((n) => 
+              n.id === updatedNotification.id ? updatedNotification : n
+            )
+            // Recalculate unread count
+            const unread = updated.filter((n) => !n.is_read).length
+            setUnreadCount(unread)
+            return updated
+          })
+        },
+      )
+      .subscribe((status) => {
+        console.log(`[Notifications] Subscription status: ${status} for user ${userId}`)
+        if (status === "SUBSCRIBED") {
+          console.log(`[Notifications] ✅ Successfully subscribed to notifications for user ${userId}`)
+        } else if (status === "CHANNEL_ERROR") {
+          console.error(`[Notifications] ❌ Channel error for user ${userId}`)
+        } else if (status === "TIMED_OUT") {
+          console.warn(`[Notifications] ⏱️ Subscription timed out for user ${userId}`)
+        } else if (status === "CLOSED") {
+          console.warn(`[Notifications] 🔒 Subscription closed for user ${userId}`)
+        }
+      })
 
     return () => {
       supabase.removeChannel(channel)
@@ -120,20 +193,35 @@ export function NotificationBell({ className }: { className?: string }) {
   const markNotificationsAsRead = useCallback(async () => {
     if (!userId || unreadCount === 0) return
 
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id)
+    if (unreadIds.length === 0) return
+
     const { error } = await supabase
       .from("notifications")
       .update({ is_read: true })
-      .eq("user_id", userId)
-      .eq("is_read", false)
+      .in("id", unreadIds)
 
     if (error) {
       console.error("[v0] Notification update error:", error)
       return
     }
 
-    setNotifications((prev) => prev.map((notification) => ({ ...notification, is_read: true })))
+    setNotifications((prev) => prev.map((notification) => 
+      unreadIds.includes(notification.id) 
+        ? { ...notification, is_read: true }
+        : notification
+    ))
     setUnreadCount(0)
-  }, [supabase, userId, unreadCount])
+  }, [supabase, userId, notifications, unreadCount])
+
+  const handleOpenChange = useCallback((open: boolean) => {
+    if (open && unreadCount > 0 && notifications.length > 0) {
+      // Small delay to ensure dropdown is visible before marking as read
+      setTimeout(() => {
+        markNotificationsAsRead()
+      }, 100)
+    }
+  }, [unreadCount, notifications.length, markNotificationsAsRead])
 
   if (isLoading || !userId) {
     return (
@@ -144,13 +232,7 @@ export function NotificationBell({ className }: { className?: string }) {
   }
 
   return (
-    <DropdownMenu
-      onOpenChange={(open) => {
-        if (open) {
-          markNotificationsAsRead()
-        }
-      }}
-    >
+    <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className={cn("relative", className)}>
           <Bell className="h-5 w-5" />
@@ -161,9 +243,15 @@ export function NotificationBell({ className }: { className?: string }) {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 max-h-96 overflow-y-auto">
-        <DropdownMenuLabel className="flex items-center justify-between">
-          <span>Notifications</span>
+      <DropdownMenuContent 
+        align="end" 
+        className="w-80 sm:w-96 max-h-[28rem] overflow-y-auto z-[9999]"
+        sideOffset={8}
+        side="bottom"
+        forceMount
+      >
+        <DropdownMenuLabel className="flex items-center justify-between sticky top-0 bg-background z-10 pb-2">
+          <span className="font-semibold">Notifications</span>
           {unreadCount === 0 ? (
             <span className="text-xs text-muted-foreground">All caught up 🎉</span>
           ) : (
@@ -172,11 +260,12 @@ export function NotificationBell({ className }: { className?: string }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {notifications.length === 0 ? (
-          <DropdownMenuItem disabled className="h-24 text-center text-muted-foreground">
+          <div className="h-24 flex items-center justify-center text-muted-foreground text-sm">
             No notifications yet
-          </DropdownMenuItem>
+          </div>
         ) : (
-          notifications.map((notification) => {
+          <div className="max-h-[24rem] overflow-y-auto">
+            {notifications.map((notification) => {
             const config = typeConfig[notification.type] ?? {
               icon: <Bell className="h-4 w-4 text-muted-foreground" />,
               label: "General",
@@ -204,7 +293,8 @@ export function NotificationBell({ className }: { className?: string }) {
                 </span>
               </DropdownMenuItem>
             )
-          })
+          })}
+          </div>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

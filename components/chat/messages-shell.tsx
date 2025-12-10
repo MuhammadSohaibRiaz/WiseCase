@@ -269,26 +269,44 @@ export function MessagesShell({ userType }: MessagesShellProps) {
     [supabase, toast, markMessagesRead],
   )
 
-  const initialize = useCallback(async () => {
-    const userId = await fetchCurrentUser()
-    if (!userId) return
-    await Promise.all([loadConversations(userId), loadUnreadCounts(userId)])
-  }, [fetchCurrentUser, loadConversations, loadUnreadCounts])
-
   useEffect(() => {
+    let isMounted = true
+    
+    const initialize = async () => {
+      const userId = await fetchCurrentUser()
+      if (!userId || !isMounted) return
+      await Promise.all([loadConversations(userId), loadUnreadCounts(userId)])
+    }
+    
     initialize()
-  }, [initialize])
+    
+    return () => {
+      isMounted = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run once on mount
 
   useEffect(() => {
     if (!currentUserId || !activeCaseId) return
     loadMessages(activeCaseId, currentUserId)
+    
+    // Scroll to bottom when messages load
+    setTimeout(() => {
+      const messagesEnd = document.getElementById("messages-end")
+      const messagesContainer = document.getElementById("messages-container")
+      if (messagesEnd) {
+        messagesEnd.scrollIntoView({ behavior: "auto", block: "end" })
+      } else if (messagesContainer) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight
+      }
+    }, 200)
   }, [activeCaseId, currentUserId, loadMessages])
 
   useEffect(() => {
     if (!currentUserId || !activeCaseId) return
 
     const channel = supabase
-      .channel(`messages-case-${activeCaseId}`)
+      .channel(`messages-case-${activeCaseId}-${Date.now()}`)
       .on(
         "postgres_changes",
         {
@@ -300,18 +318,57 @@ export function MessagesShell({ userType }: MessagesShellProps) {
         (payload) => {
           const newMessage = payload.new as ChatMessage
           setMessages((prev) => {
+            // Check if message already exists (prevent duplicates)
             if (prev.find((msg) => msg.id === newMessage.id)) {
               return prev
             }
-            return [...prev, newMessage]
+            // Sort messages by created_at to maintain order
+            const updated = [...prev, newMessage].sort((a, b) => 
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            )
+            
+            // Scroll to bottom when new message arrives
+            setTimeout(() => {
+              const messagesEnd = document.getElementById("messages-end")
+              const messagesContainer = document.getElementById("messages-container")
+              if (messagesEnd) {
+                messagesEnd.scrollIntoView({ behavior: "smooth", block: "end" })
+              } else if (messagesContainer) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight
+              }
+            }, 100)
+            
+            return updated
           })
 
-          if (newMessage.recipient_id === currentUserId) {
+          // Mark as read if recipient is current user
+          if (newMessage.recipient_id === currentUserId && !newMessage.is_read) {
             markMessagesRead([newMessage.id], activeCaseId)
           }
         },
       )
-      .subscribe()
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `case_id=eq.${activeCaseId}`,
+        },
+        (payload) => {
+          const updatedMessage = payload.new as ChatMessage
+          setMessages((prev) => 
+            prev.map((msg) => msg.id === updatedMessage.id ? updatedMessage : msg)
+          )
+        },
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log(`[Messages] Subscribed to case ${activeCaseId}`)
+        } else if (status === "CHANNEL_ERROR") {
+          console.error(`[Messages] Channel error for case ${activeCaseId}`)
+        }
+      })
 
     return () => {
       supabase.removeChannel(channel)
@@ -385,8 +442,34 @@ export function MessagesShell({ userType }: MessagesShellProps) {
 
       if (error) throw error
 
-      setMessages((prev) => [...prev, data])
+      // Optimistically add message immediately
+      const optimisticMessage = {
+        ...data,
+        created_at: data.created_at || new Date().toISOString(),
+      }
+      setMessages((prev) => {
+        // Check if message already exists (from real-time)
+        if (prev.find((msg) => msg.id === data.id)) {
+          return prev
+        }
+        // Sort messages by created_at to maintain order
+        const updated = [...prev, optimisticMessage].sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        )
+        return updated
+      })
       setNewMessage("")
+      
+      // Scroll to bottom after adding message
+      setTimeout(() => {
+        const messagesEnd = document.getElementById("messages-end")
+        const messagesContainer = document.getElementById("messages-container")
+        if (messagesEnd) {
+          messagesEnd.scrollIntoView({ behavior: "smooth", block: "end" })
+        } else if (messagesContainer) {
+          messagesContainer.scrollTop = messagesContainer.scrollHeight
+        }
+      }, 100)
 
       await notifyMessage(
         {
@@ -438,8 +521,8 @@ export function MessagesShell({ userType }: MessagesShellProps) {
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-4 min-h-[70vh]">
-      <Card className="md:col-span-1 flex flex-col">
+    <div className="grid gap-4 grid-cols-1 md:grid-cols-4 min-h-[70vh] w-full">
+      <Card className="md:col-span-1 flex flex-col max-h-[70vh] order-2 md:order-1">
         <CardHeader>
           <CardTitle className="text-base">Conversations</CardTitle>
         </CardHeader>
@@ -500,7 +583,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
         </CardContent>
       </Card>
 
-      <Card className="md:col-span-3 flex flex-col min-h-[60vh]">
+      <Card className="md:col-span-3 flex flex-col min-h-[60vh] max-h-[70vh] order-1 md:order-2">
         {activeConversation ? (
           <>
             <CardHeader className="border-b bg-card/60">
@@ -531,7 +614,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
               </div>
             </CardHeader>
 
-            <CardContent className="flex-1 overflow-y-auto space-y-4 py-6">
+            <CardContent className="flex-1 overflow-y-auto space-y-4 py-6 px-6" id="messages-container" style={{ minHeight: '400px' }}>
               {isLoadingMessages ? (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -541,39 +624,42 @@ export function MessagesShell({ userType }: MessagesShellProps) {
                   No messages yet. Start the conversation!
                 </div>
               ) : (
-                messages.map((message) => {
-                  const isOwnMessage = message.sender_id === currentUserId
-                  return (
-                    <div key={message.id} className={cn("flex", isOwnMessage ? "justify-end" : "justify-start")}>
-                      <div
-                        className={cn(
-                          "max-w-[75%] rounded-2xl px-4 py-2 shadow-sm",
-                          isOwnMessage
-                            ? "bg-primary text-primary-foreground rounded-br-sm"
-                            : "bg-muted text-foreground rounded-bl-sm",
-                        )}
-                      >
-                        <p className="text-sm leading-relaxed break-words">{message.content}</p>
-                        <p
+                <>
+                  {messages.map((message) => {
+                    const isOwnMessage = message.sender_id === currentUserId
+                    return (
+                      <div key={message.id} className={cn("flex", isOwnMessage ? "justify-end" : "justify-start")}>
+                        <div
                           className={cn(
-                            "text-[11px] mt-1",
-                            isOwnMessage ? "text-primary-foreground/70" : "text-muted-foreground",
+                            "max-w-[75%] sm:max-w-[80%] rounded-2xl px-5 py-3 shadow-sm",
+                            isOwnMessage
+                              ? "bg-primary text-primary-foreground rounded-br-sm"
+                              : "bg-muted text-foreground rounded-bl-sm",
                           )}
                         >
-                          {new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </p>
+                          <p className="text-base leading-relaxed break-words whitespace-pre-wrap">{message.content}</p>
+                          <p
+                            className={cn(
+                              "text-[11px] mt-1",
+                              isOwnMessage ? "text-primary-foreground/70" : "text-muted-foreground",
+                            )}
+                          >
+                            {new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  )
-                })
+                    )
+                  })}
+                  <div id="messages-end" />
+                </>
               )}
             </CardContent>
 
-            <div className="border-t p-4 space-y-3 bg-card/80">
-              <div className="flex gap-2">
+            <div className="border-t p-3 bg-card/80">
+              <div className="flex gap-2 items-end">
                 <Input
                   placeholder="Type your message..."
-                  className="flex-1"
+                  className="flex-1 text-base py-3 min-h-[48px]"
                   value={newMessage}
                   onChange={(event) => setNewMessage(event.target.value)}
                   onKeyDown={(event) => {
@@ -584,14 +670,14 @@ export function MessagesShell({ userType }: MessagesShellProps) {
                   }}
                   disabled={isSending}
                 />
-                <Button variant="outline" size="icon" disabled>
+                <Button variant="outline" size="icon" disabled className="h-[48px] w-[48px]">
                   <Paperclip className="h-4 w-4" />
                 </Button>
-                <Button size="icon" onClick={handleSendMessage} disabled={isSending || !newMessage.trim()}>
+                <Button size="icon" onClick={handleSendMessage} disabled={isSending || !newMessage.trim()} className="h-[48px] w-[48px]">
                   {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
               </div>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground mt-1.5">
                 {userType === "client"
                   ? "You are messaging your assigned lawyer."
                   : "You are messaging your client."}
@@ -605,4 +691,3 @@ export function MessagesShell({ userType }: MessagesShellProps) {
     </div>
   )
 }
-
