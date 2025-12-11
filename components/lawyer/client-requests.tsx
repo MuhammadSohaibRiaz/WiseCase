@@ -104,7 +104,7 @@ export function ClientRequests() {
     const setupRealtime = async () => {
       const supabase = createClient()
       const { data } = await supabase.auth.getSession()
-      
+
       if (!data.session?.user?.id) return null
 
       const channel = supabase
@@ -177,7 +177,7 @@ export function ClientRequests() {
       const { error } = await supabase
         .from("appointments")
         .update({
-          status: "scheduled",
+          status: "awaiting_payment",
           responded_at: new Date().toISOString(),
         })
         .eq("id", requestId)
@@ -201,7 +201,7 @@ export function ClientRequests() {
 
       toast({
         title: "Request Accepted",
-        description: "The appointment has been scheduled.",
+        description: "The client will be notified to complete payment.",
       })
     } catch (error) {
       console.error("[v0] Accept error:", error)

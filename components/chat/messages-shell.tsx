@@ -271,15 +271,15 @@ export function MessagesShell({ userType }: MessagesShellProps) {
 
   useEffect(() => {
     let isMounted = true
-    
+
     const initialize = async () => {
       const userId = await fetchCurrentUser()
       if (!userId || !isMounted) return
       await Promise.all([loadConversations(userId), loadUnreadCounts(userId)])
     }
-    
+
     initialize()
-    
+
     return () => {
       isMounted = false
     }
@@ -289,7 +289,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
   useEffect(() => {
     if (!currentUserId || !activeCaseId) return
     loadMessages(activeCaseId, currentUserId)
-    
+
     // Scroll to bottom when messages load
     setTimeout(() => {
       const messagesEnd = document.getElementById("messages-end")
@@ -323,10 +323,10 @@ export function MessagesShell({ userType }: MessagesShellProps) {
               return prev
             }
             // Sort messages by created_at to maintain order
-            const updated = [...prev, newMessage].sort((a, b) => 
+            const updated = [...prev, newMessage].sort((a, b) =>
               new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
             )
-            
+
             // Scroll to bottom when new message arrives
             setTimeout(() => {
               const messagesEnd = document.getElementById("messages-end")
@@ -337,7 +337,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight
               }
             }, 100)
-            
+
             return updated
           })
 
@@ -357,7 +357,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
         },
         (payload) => {
           const updatedMessage = payload.new as ChatMessage
-          setMessages((prev) => 
+          setMessages((prev) =>
             prev.map((msg) => msg.id === updatedMessage.id ? updatedMessage : msg)
           )
         },
@@ -453,13 +453,13 @@ export function MessagesShell({ userType }: MessagesShellProps) {
           return prev
         }
         // Sort messages by created_at to maintain order
-        const updated = [...prev, optimisticMessage].sort((a, b) => 
+        const updated = [...prev, optimisticMessage].sort((a, b) =>
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         )
         return updated
       })
       setNewMessage("")
-      
+
       // Scroll to bottom after adding message
       setTimeout(() => {
         const messagesEnd = document.getElementById("messages-end")
@@ -521,8 +521,8 @@ export function MessagesShell({ userType }: MessagesShellProps) {
   }
 
   return (
-    <div className="grid gap-4 grid-cols-1 md:grid-cols-4 min-h-[70vh] w-full">
-      <Card className="md:col-span-1 flex flex-col max-h-[70vh] order-2 md:order-1">
+    <div className="grid gap-4 grid-cols-1 md:grid-cols-4 h-[calc(100vh-280px)] w-full">
+      <Card className="md:col-span-1 flex flex-col h-full order-2 md:order-1">
         <CardHeader>
           <CardTitle className="text-base">Conversations</CardTitle>
         </CardHeader>
@@ -531,7 +531,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
             {conversations.map((conversation) => {
               const participantName = conversation.participant
                 ? `${conversation.participant.first_name || ""} ${conversation.participant.last_name || ""}`.trim() ||
-                  (conversation.participant.user_type === "lawyer" ? "Lawyer" : "Client")
+                (conversation.participant.user_type === "lawyer" ? "Lawyer" : "Client")
                 : conversation.clientId === currentUserId
                   ? "Awaiting lawyer"
                   : "Awaiting client"
@@ -583,14 +583,14 @@ export function MessagesShell({ userType }: MessagesShellProps) {
         </CardContent>
       </Card>
 
-      <Card className="md:col-span-3 flex flex-col min-h-[60vh] max-h-[70vh] order-1 md:order-2">
+      <Card className="md:col-span-3 flex flex-col h-full order-1 md:order-2">
         {activeConversation ? (
           <>
-            <CardHeader className="border-b bg-card/60">
+            <CardHeader className="border-b bg-card/60 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground uppercase tracking-wide">{activeConversation.caseType}</p>
-                  <CardTitle className="text-2xl">{activeConversation.title}</CardTitle>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">{activeConversation.caseType}</p>
+                  <CardTitle className="text-xl">{activeConversation.title}</CardTitle>
                   <p className="text-xs text-muted-foreground">Status: {activeConversation.status}</p>
                 </div>
                 {activeConversation.participant && (
@@ -614,7 +614,7 @@ export function MessagesShell({ userType }: MessagesShellProps) {
               </div>
             </CardHeader>
 
-            <CardContent className="flex-1 overflow-y-auto space-y-4 py-6 px-6" id="messages-container" style={{ minHeight: '400px' }}>
+            <CardContent className="flex-1 overflow-y-auto space-y-4 py-4 px-6" id="messages-container">
               {isLoadingMessages ? (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

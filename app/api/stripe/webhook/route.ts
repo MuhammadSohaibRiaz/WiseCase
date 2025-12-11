@@ -52,13 +52,28 @@ export async function POST(request: NextRequest) {
             .eq("id", payment_id)
 
           // Update appointment status to scheduled
-          await supabase
+          const { data: updatedAppointment } = await supabase
             .from("appointments")
             .update({
               status: "scheduled",
               updated_at: new Date().toISOString(),
             })
             .eq("id", appointment_id)
+            .select("case_id")
+            .single()
+
+          // Update case status to in_progress
+          if (updatedAppointment?.case_id) {
+            await supabase
+              .from("cases")
+              .update({
+                status: "in_progress",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", updatedAppointment.case_id)
+
+            console.log(`[Stripe] Updated case ${updatedAppointment.case_id} to in_progress`)
+          }
 
           // Create notifications for client and lawyer
           const { data: appointment } = await supabase
@@ -111,13 +126,28 @@ export async function POST(request: NextRequest) {
             .eq("id", payment_id)
 
           // Update appointment status to scheduled
-          await supabase
+          const { data: updatedAppointment } = await supabase
             .from("appointments")
             .update({
               status: "scheduled",
               updated_at: new Date().toISOString(),
             })
             .eq("id", appointment_id)
+            .select("case_id")
+            .single()
+
+          // Update case status to in_progress
+          if (updatedAppointment?.case_id) {
+            await supabase
+              .from("cases")
+              .update({
+                status: "in_progress",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", updatedAppointment.case_id)
+
+            console.log(`[Stripe] Updated case ${updatedAppointment.case_id} to in_progress`)
+          }
 
           // Create notifications for client and lawyer
           const { data: appointment } = await supabase

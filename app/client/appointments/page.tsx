@@ -22,9 +22,12 @@ interface Appointment {
   scheduled_at: string
   duration_minutes: number
   status: "pending" | "awaiting_payment" | "scheduled" | "completed" | "cancelled" | "rescheduled" | "rejected"
+  payment_status?: "pending" | "completed" | "failed" | null
   case: {
+    id: string
     title: string
     case_type: string
+    hourly_rate: number | null
   }
   lawyer: {
     id: string
@@ -46,17 +49,53 @@ export default function ClientAppointmentsPage() {
     // Check for payment success/failure in URL params
     const paymentStatus = searchParams.get("payment")
     const sessionId = searchParams.get("session_id")
-    
+
     if (paymentStatus === "success" && sessionId) {
       console.log("[Client Appointments] Payment success detected, session_id:", sessionId)
-      toast({
-        title: "Payment Successful",
-        description: "Your appointment has been confirmed. Refreshing...",
-      })
-      // Refresh appointments after a short delay to allow webhook to process
-      setTimeout(() => {
-        window.location.href = "/client/appointments"
-      }, 2000)
+
+      // Verify payment status with Stripe (fallback for when webhook doesn't fire)
+      const verifyPayment = async () => {
+        try {
+          const response = await fetch("/api/stripe/verify-payment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId }),
+          })
+
+          if (response.ok) {
+            const data = await response.json()
+            console.log("[Client Appointments] Payment verification result:", data)
+
+            toast({
+              title: "Payment Successful",
+              description: "Your appointment has been confirmed. Refreshing...",
+            })
+
+            // Refresh after a short delay
+            setTimeout(() => {
+              window.location.href = "/client/appointments"
+            }, 2000)
+          } else {
+            console.error("[Client Appointments] Payment verification failed")
+            // Still redirect but show message
+            toast({
+              title: "Payment Processing",
+              description: "Your payment is being processed. The page will refresh shortly.",
+            })
+            setTimeout(() => {
+              window.location.href = "/client/appointments"
+            }, 3000)
+          }
+        } catch (error) {
+          console.error("[Client Appointments] Error verifying payment:", error)
+          // Fallback: just refresh
+          setTimeout(() => {
+            window.location.href = "/client/appointments"
+          }, 2000)
+        }
+      }
+
+      verifyPayment()
       return
     } else if (paymentStatus === "cancelled") {
       toast({
@@ -88,6 +127,8 @@ export default function ClientAppointmentsPage() {
             scheduled_at,
             duration_minutes,
             status,
+            created_at,
+            case_id,
             cases (
               id,
               title,
@@ -103,25 +144,44 @@ export default function ClientAppointmentsPage() {
           `,
           )
           .eq("client_id", sessionData.session.user.id)
-          .order("scheduled_at", { ascending: false })
+          .order("created_at", { ascending: false })
 
         if (fetchError) throw fetchError
+
+        // Fetch payment status for each appointment
+        const appointmentIds = (data || []).map((apt: any) => apt.id)
+        let paymentStatuses: Record<string, string> = {}
+
+        if (appointmentIds.length > 0) {
+          const { data: paymentsData } = await supabase
+            .from("payments")
+            .select("case_id, status")
+            .in("case_id", (data || []).map((apt: any) => apt.case_id))
+
+          if (paymentsData) {
+            paymentsData.forEach((payment) => {
+              paymentStatuses[payment.case_id] = payment.status
+            })
+          }
+        }
 
         const mappedAppointments = (data || []).map((apt: any) => ({
           id: apt.id,
           scheduled_at: apt.scheduled_at,
           duration_minutes: apt.duration_minutes,
           status: apt.status || "pending",
+          // Get payment status from payments table
+          payment_status: paymentStatuses[apt.case_id] || null,
           case: apt.cases || { id: "", title: "", case_type: "", hourly_rate: null },
           lawyer: apt.profiles || {},
         }))
-        
+
         console.log("[Client Appointments] Loaded appointments:", mappedAppointments.map(apt => ({
           id: apt.id,
           status: apt.status,
           case: apt.case.title
         })))
-        
+
         setAppointments(mappedAppointments)
       } catch (error) {
         console.error("[v0] Fetch error:", error)
@@ -270,21 +330,20 @@ export default function ClientAppointmentsPage() {
           {appointments.map((appointment) => (
             <div
               key={appointment.id}
-              className={`rounded-lg border ${
-                appointment.status === "cancelled"
-                  ? "border-red-200 bg-red-50/50 dark:bg-red-950/20 dark:border-red-900/50 opacity-75"
-                  :                     appointment.status === "pending"
-                    ? "border-orange-200 bg-orange-50/30 dark:bg-orange-950/20 dark:border-orange-800/50"
-                    : appointment.status === "awaiting_payment"
-                      ? "border-yellow-200 bg-yellow-50/30 dark:bg-yellow-950/20 dark:border-yellow-800/50 shadow-sm"
-                      : appointment.status === "scheduled"
-                        ? "border-blue-200 bg-blue-50/30 dark:bg-blue-950/20 dark:border-blue-800/50 shadow-sm"
-                        : appointment.status === "completed"
-                          ? "border-green-200 bg-green-50/30 dark:bg-green-950/20 dark:border-green-800/50"
-                          : appointment.status === "rejected"
-                            ? "border-red-200 bg-red-50/30 dark:bg-red-950/20 dark:border-red-800/50"
-                            : "border-border bg-card"
-              } p-6 transition-all hover:shadow-md`}
+              className={`rounded-lg border ${appointment.status === "cancelled"
+                ? "border-red-200 bg-red-50/50 dark:bg-red-950/20 dark:border-red-900/50 opacity-75"
+                : appointment.status === "pending"
+                  ? "border-orange-200 bg-orange-50/30 dark:bg-orange-950/20 dark:border-orange-800/50"
+                  : appointment.status === "awaiting_payment"
+                    ? "border-yellow-200 bg-yellow-50/30 dark:bg-yellow-950/20 dark:border-yellow-800/50 shadow-sm"
+                    : appointment.status === "scheduled"
+                      ? "border-blue-200 bg-blue-50/30 dark:bg-blue-950/20 dark:border-blue-800/50 shadow-sm"
+                      : appointment.status === "completed"
+                        ? "border-green-200 bg-green-50/30 dark:bg-green-950/20 dark:border-green-800/50"
+                        : appointment.status === "rejected"
+                          ? "border-red-200 bg-red-50/30 dark:bg-red-950/20 dark:border-red-800/50"
+                          : "border-border bg-card"
+                } p-6 transition-all hover:shadow-md`}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-4 flex-1">
@@ -293,15 +352,13 @@ export default function ClientAppointmentsPage() {
                       <img
                         src={appointment.lawyer.avatar_url || "/placeholder.svg"}
                         alt={`${appointment.lawyer.first_name} ${appointment.lawyer.last_name}`}
-                        className={`h-10 w-10 rounded-full object-cover ${
-                          appointment.status === "cancelled" ? "opacity-50 grayscale" : ""
-                        }`}
+                        className={`h-10 w-10 rounded-full object-cover ${appointment.status === "cancelled" ? "opacity-50 grayscale" : ""
+                          }`}
                       />
                     ) : (
                       <div
-                        className={`h-10 w-10 rounded-full bg-muted flex items-center justify-center ${
-                          appointment.status === "cancelled" ? "opacity-50" : ""
-                        }`}
+                        className={`h-10 w-10 rounded-full bg-muted flex items-center justify-center ${appointment.status === "cancelled" ? "opacity-50" : ""
+                          }`}
                       >
                         <span className="text-sm font-medium text-muted-foreground">
                           {appointment.lawyer.first_name?.charAt(0)}
@@ -311,9 +368,8 @@ export default function ClientAppointmentsPage() {
                     )}
                     <div>
                       <p
-                        className={`font-medium ${
-                          appointment.status === "cancelled" ? "text-muted-foreground line-through" : ""
-                        }`}
+                        className={`font-medium ${appointment.status === "cancelled" ? "text-muted-foreground line-through" : ""
+                          }`}
                       >
                         {appointment.lawyer.first_name} {appointment.lawyer.last_name}
                       </p>
@@ -356,25 +412,34 @@ export default function ClientAppointmentsPage() {
 
                 <div className="flex flex-col gap-2 items-end">
                   <span
-                    className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
-                      appointment.status === "pending"
-                        ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-200 dark:border-orange-800"
-                        : appointment.status === "awaiting_payment"
-                          ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800"
-                          : appointment.status === "scheduled"
-                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
-                            : appointment.status === "completed"
-                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border border-green-200 dark:border-green-800"
-                              : appointment.status === "rejected"
-                                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-200 dark:border-red-800"
-                                : appointment.status === "cancelled"
-                                  ? "bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400 border border-gray-200 dark:border-gray-700"
-                                  : "bg-gray-100 text-gray-700 dark:bg-gray-800/30 dark:text-gray-300"
-                    }`}
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${appointment.status === "pending"
+                      ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-200 dark:border-orange-800"
+                      : appointment.status === "awaiting_payment"
+                        ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800"
+                        : appointment.status === "scheduled"
+                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                          : appointment.status === "completed"
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border border-green-200 dark:border-green-800"
+                            : appointment.status === "rejected"
+                              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-200 dark:border-red-800"
+                              : appointment.status === "cancelled"
+                                ? "bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400 border border-gray-200 dark:border-gray-700"
+                                : "bg-gray-100 text-gray-700 dark:bg-gray-800/30 dark:text-gray-300"
+                      }`}
                   >
-                    {appointment.status === "awaiting_payment"
-                      ? "Awaiting Payment"
-                      : appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1).replace(/_/g, " ")}
+                    {appointment.status === "pending"
+                      ? "Pending"
+                      : appointment.status === "awaiting_payment"
+                        ? "Awaiting Payment"
+                        : appointment.status === "scheduled"
+                          ? "Scheduled"
+                          : appointment.status === "completed"
+                            ? "Completed"
+                            : appointment.status === "rejected"
+                              ? "Rejected"
+                              : appointment.status === "cancelled"
+                                ? "Cancelled"
+                                : appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1).replace(/_/g, " ")}
                   </span>
 
                   {appointment.status === "awaiting_payment" && (

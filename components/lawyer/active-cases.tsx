@@ -44,7 +44,7 @@ export function ActiveCases() {
         return
       }
 
-      // Fetch active cases (open or in_progress)
+      // Fetch active cases (open or in_progress) where lawyer is assigned
       const { data, error } = await supabase
         .from("cases")
         .select(
@@ -55,6 +55,7 @@ export function ActiveCases() {
           status,
           hourly_rate,
           created_at,
+          lawyer_id,
           client:profiles!cases_client_id_fkey (
             first_name,
             last_name
@@ -62,6 +63,7 @@ export function ActiveCases() {
         `,
         )
         .eq("lawyer_id", sessionData.session.user.id)
+        .not("lawyer_id", "is", null)
         .in("status", ["open", "in_progress"])
         .order("updated_at", { ascending: false })
         .limit(3)
