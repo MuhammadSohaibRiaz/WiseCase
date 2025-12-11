@@ -3,11 +3,12 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Menu, LogOut, Loader2 } from "lucide-react"
+import { Menu, LogOut, Loader2, Settings, LayoutDashboard, User } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -94,24 +95,34 @@ export function ClientHeader({ onMenuClick }: ClientHeaderProps) {
           {/* Profile Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full">
-                <Avatar className="h-8 w-8">
+              <button
+                className="rounded-full hover:bg-accent p-1 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                onClick={() => console.log("[ProfileDropdown] Button clicked")}
+              >
+                <Avatar className="h-8 w-8 border-2 border-primary/20 cursor-pointer">
                   <AvatarImage src={profile?.avatar_url || "/placeholder.svg"} />
-                  <AvatarFallback>{initials}</AvatarFallback>
+                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">{initials}</AvatarFallback>
                 </Avatar>
-              </Button>
+              </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem>
-                <span>{fullName}</span>
+            <DropdownMenuContent align="end" className="w-56 z-50">
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium leading-none">{fullName}</p>
+                  <p className="text-xs leading-none text-muted-foreground">{email}</p>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push("/client/dashboard")} className="cursor-pointer">
+                <LayoutDashboard className="h-4 w-4 mr-2" />
+                Dashboard
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <span>{email}</span>
+              <DropdownMenuItem onClick={() => router.push("/client/settings")} className="cursor-pointer">
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push("/client/settings")}>Profile Settings</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive cursor-pointer" onClick={handleLogout}>
+              <DropdownMenuItem className="text-destructive cursor-pointer focus:text-destructive" onClick={handleLogout}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Logout
               </DropdownMenuItem>

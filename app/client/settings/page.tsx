@@ -48,6 +48,8 @@ export default function ClientSettingsPage() {
           data: { user },
         } = await supabase.auth.getUser()
 
+        console.log("[Client Settings] Current user:", user?.id)
+
         if (!user) {
           router.push("/auth/client/sign-in")
           return
@@ -56,6 +58,9 @@ export default function ClientSettingsPage() {
         setUser(user)
 
         const { data: profileData, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+
+        console.log("[Client Settings] Profile data from DB:", profileData)
+        console.log("[Client Settings] Profile error:", error)
 
         if (error && error.code !== "PGRST116") {
           throw error
@@ -67,18 +72,28 @@ export default function ClientSettingsPage() {
           const locationParts = (profileData.location || "").split(",").map((s: string) => s.trim())
           const city = locationParts[0] || ""
           const country = locationParts[1] || ""
-          
-          setFormData({
+
+          const newFormData = {
             firstName: profileData.first_name || "",
             lastName: profileData.last_name || "",
             email: profileData.email || user.email || "",
             phone: profileData.phone || "",
             city: city,
             country: country,
-          })
+          }
+
+          console.log("[Client Settings] Setting form data:", newFormData)
+          setFormData(newFormData)
+        } else {
+          console.log("[Client Settings] No profile data found, using defaults")
+          // Set email at least
+          setFormData(prev => ({
+            ...prev,
+            email: user.email || "",
+          }))
         }
       } catch (error) {
-        console.error("Error loading user data:", error)
+        console.error("[Client Settings] Error loading user data:", error)
         toast({
           title: "Error",
           description: "Failed to load profile data",
@@ -100,7 +115,7 @@ export default function ClientSettingsPage() {
 
       // Check if bucket exists, if not show helpful error
       const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
-      
+
       if (bucketError) {
         throw new Error("Unable to access storage. Please check your Supabase configuration.")
       }
@@ -200,7 +215,7 @@ export default function ClientSettingsPage() {
         const locationParts = (profileData.location || "").split(",").map((s: string) => s.trim())
         const city = locationParts[0] || ""
         const country = locationParts[1] || ""
-        
+
         setFormData({
           firstName: profileData.first_name || "",
           lastName: profileData.last_name || "",

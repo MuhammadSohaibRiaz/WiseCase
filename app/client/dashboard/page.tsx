@@ -1,112 +1,292 @@
+"use client"
+
 export const dynamic = "force-dynamic"
 
+import { useEffect, useState } from "react"
 import type { Metadata } from "next"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { AlertCircle, Calendar, FileText, DollarSign, MessageSquare, Star } from "lucide-react"
+import { AlertCircle, Calendar, FileText, DollarSign, MessageSquare, Star, Loader2 } from "lucide-react"
+import Link from "next/link"
+import { createClient } from "@/lib/supabase/client"
+import { useToast } from "@/hooks/use-toast"
 
-export const metadata: Metadata = {
-  title: "Dashboard — Smart Lawyer Booking System",
-  description: "Your legal case overview, upcoming appointments, and AI recommendations.",
+interface DashboardStats {
+  activeConsultations: number
+  pendingPayments: number
+  totalSpent: number
+  nextAppointment: {
+    date: string
+    time: string
+    lawyerName: string
+  } | null
 }
 
 export default function ClientDashboardPage() {
+  const [stats, setStats] = useState<DashboardStats>({
+    activeConsultations: 0,
+    pendingPayments: 0,
+    totalSpent: 0,
+    nextAppointment: null,
+  })
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const { toast } = useToast()
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+        const supabase = createClient()
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (!session?.user?.id) {
+          setError("Authentication required")
+          console.error("[Client Dashboard] No active session")
+          toast({
+            title: "Authentication Required",
+            description: "Please log in to view your dashboard",
+            variant: "destructive",
+          })
+          return
+        }
+
+        console.log("[Client Dashboard] Fetching data for user:", session.user.id)
+
+        // Fetch active consultations (cases that are open or in_progress)
+        const { data: casesData } = await supabase
+          .from("cases")
+          .select("id, status")
+          .eq("client_id", session.user.id)
+          .in("status", ["open", "in_progress"])
+
+        const activeConsultations = casesData?.length || 0
+
+        // Fetch pending payments
+        const { data: paymentsData } = await supabase
+          .from("payments")
+          .select("amount, status")
+          .eq("client_id", session.user.id)
+          .eq("status", "pending")
+
+        const pendingPayments = (paymentsData || []).reduce((sum, p) => sum + p.amount, 0)
+
+        // Fetch total spent (completed payments)
+        const { data: completedPayments } = await supabase
+          .from("payments")
+          .select("amount")
+          .eq("client_id", session.user.id)
+          .eq("status", "completed")
+
+        const totalSpent = (completedPayments || []).reduce((sum, p) => sum + p.amount, 0)
+
+        // Fetch next appointment
+        const { data: appointmentsData } = await supabase
+          .from("appointments")
+          .select(`
+            id,
+            scheduled_at,
+            status,
+            lawyer:profiles!appointments_lawyer_id_fkey (
+              first_name,
+              last_name
+            )
+          `)
+          .eq("client_id", session.user.id)
+          .in("status", ["scheduled", "confirmed"])
+          .gte("scheduled_at", new Date().toISOString())
+          .order("scheduled_at", { ascending: true })
+          .limit(1)
+          .single()
+
+        let nextAppointment = null
+        if (appointmentsData) {
+          const appointmentDate = new Date(appointmentsData.scheduled_at)
+          const dayOfWeek = appointmentDate.toLocaleDateString("en-US", { weekday: "long" })
+          const time = appointmentDate.toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          })
+          const lawyerName = `${appointmentsData.lawyer.first_name || ""} ${appointmentsData.lawyer.last_name || ""}`.trim()
+
+          nextAppointment = {
+            date: dayOfWeek,
+            time: time,
+            lawyerName: lawyerName || "Lawyer",
+          }
+        }
+
+        setStats({
+          activeConsultations,
+          pendingPayments,
+          totalSpent,
+          nextAppointment,
+        })
+      } catch (error: any) {
+        console.error("[Client Dashboard] Error fetching data:", error)
+        setError(error.message || "Failed to load dashboard data")
+        toast({
+          title: "Error",
+          description: "Failed to load dashboard data. Please try again.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchDashboardData()
+  }, [toast])
+
+  if (error) {
+    return (
+      <main className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <AlertCircle className="h-12 w-12 text-destructive" />
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-destructive mb-2">Error Loading Dashboard</h2>
+          <p className="text-sm text-muted-foreground mb-4">{error}</p>
+          <Button onClick={() => window.location.reload()} variant="outline">
+            Try Again
+          </Button>
+        </div>
+      </main>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <main className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </main>
+    )
+  }
+
   return (
     <main className="space-y-8">
       {/* Summary Cards */}
       <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Consultations</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">2</div>
-            <p className="text-xs text-muted-foreground">Ongoing cases</p>
-          </CardContent>
-        </Card>
+        <Link href="/client/cases">
+          <Card className="cursor-pointer hover:bg-accent transition-colors">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active Consultations</CardTitle>
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.activeConsultations}</div>
+              <p className="text-xs text-muted-foreground">Ongoing cases</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Payments</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">PKR 15,000</div>
-            <p className="text-xs text-muted-foreground">Due this week</p>
-          </CardContent>
-        </Card>
+        <Link href="/client/payments">
+          <Card className="cursor-pointer hover:bg-accent transition-colors">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pending Payments</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">PKR {stats.pendingPayments.toLocaleString()}</div>
+              <p className="text-xs text-muted-foreground">Due now</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Next Appointment</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">Friday</div>
-            <p className="text-xs text-muted-foreground">4:00 PM with Ahmed Hassan</p>
-          </CardContent>
-        </Card>
+        <Link href="/client/appointments">
+          <Card className="cursor-pointer hover:bg-accent transition-colors">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Next Appointment</CardTitle>
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {stats.nextAppointment ? (
+                <>
+                  <div className="text-2xl font-bold">{stats.nextAppointment.date}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {stats.nextAppointment.time} with {stats.nextAppointment.lawyerName}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">None</div>
+                  <p className="text-xs text-muted-foreground">No upcoming appointments</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Spent</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">PKR 85,000</div>
-            <p className="text-xs text-muted-foreground">All time</p>
-          </CardContent>
-        </Card>
+        <Link href="/client/payments">
+          <Card className="cursor-pointer hover:bg-accent transition-colors">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Spent</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">PKR {stats.totalSpent.toLocaleString()}</div>
+              <p className="text-xs text-muted-foreground">All time</p>
+            </CardContent>
+          </Card>
+        </Link>
       </section>
 
       {/* Quick Actions */}
       <section className="grid gap-4 md:grid-cols-3">
-        <Card className="border-2 border-primary/20 hover:border-primary/40 transition-colors cursor-pointer">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              Upload Document
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">Get AI analysis of your legal documents</p>
-            <Button variant="outline" size="sm">
-              Upload Now
-            </Button>
-          </CardContent>
-        </Card>
+        <Link href="/client/analysis">
+          <Card className="border-2 border-primary/20 hover:border-primary/40 transition-colors cursor-pointer min-h-[180px] flex flex-col">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Upload Document
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-grow flex flex-col">
+              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">Get AI analysis of your legal documents</p>
+              <Button variant="outline" size="sm" className="mt-auto">
+                Upload Now
+              </Button>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card className="border-2 border-primary/20 hover:border-primary/40 transition-colors cursor-pointer">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Star className="h-5 w-5 text-primary" />
-              Find a Lawyer
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">Browse verified lawyers in your area</p>
-            <Button variant="outline" size="sm">
-              Browse Now
-            </Button>
-          </CardContent>
-        </Card>
+        <Link href="/match">
+          <Card className="border-2 border-primary/20 hover:border-primary/40 transition-colors cursor-pointer min-h-[180px] flex flex-col">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Star className="h-5 w-5 text-primary" />
+                Find a Lawyer
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-grow flex flex-col">
+              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">Browse verified lawyers in your area</p>
+              <Button variant="outline" size="sm" className="mt-auto">
+                Browse Now
+              </Button>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card className="border-2 border-primary/20 hover:border-primary/40 transition-colors cursor-pointer">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-primary" />
-              AI Recommendations
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">View AI-matched lawyers for your case</p>
-            <Button variant="outline" size="sm">
-              View Now
-            </Button>
-          </CardContent>
-        </Card>
+        <Link href="/client/ai-recommendations">
+          <Card className="border-2 border-primary/20 hover:border-primary/40 transition-colors cursor-pointer min-h-[180px] flex flex-col">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-primary" />
+                AI Recommendations
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-grow flex flex-col">
+              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">View AI-matched lawyers for your case</p>
+              <Button variant="outline" size="sm">
+                View Now
+              </Button>
+            </CardContent>
+          </Card>
+        </Link>
       </section>
 
       {/* Recommended Lawyers */}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -46,6 +47,7 @@ export default function LawyerProfilePage() {
   const [passwordLoading, setPasswordLoading] = useState(false)
   const [certifications, setCertifications] = useState<Certification[]>([])
   const [showCertForm, setShowCertForm] = useState(false)
+  const [activeTab, setActiveTab] = useState("professional")
 
   // Form states
   const [formData, setFormData] = useState({
@@ -77,6 +79,15 @@ export default function LawyerProfilePage() {
     confirmPassword: "",
   })
 
+  // Handle URL query parameter for tab selection
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tab = params.get("tab")
+    if (tab && ["professional", "specializations", "security", "account"].includes(tab)) {
+      setActiveTab(tab)
+    }
+  }, [])
+
   useEffect(() => {
     const loadUserData = async () => {
       try {
@@ -84,6 +95,8 @@ export default function LawyerProfilePage() {
         const {
           data: { user },
         } = await supabase.auth.getUser()
+
+        console.log("[Lawyer Profile] Current user:", user?.id)
 
         if (!user) {
           router.push("/auth/lawyer/sign-in")
@@ -98,6 +111,11 @@ export default function LawyerProfilePage() {
           supabase.from("certifications").select("*").eq("lawyer_id", user.id),
         ])
 
+        console.log("[Lawyer Profile] Profile data from DB:", profileResult.data)
+        console.log("[Lawyer Profile] Lawyer profile data from DB:", lawyerResult.data)
+        console.log("[Lawyer Profile] Profile error:", profileResult.error)
+        console.log("[Lawyer Profile] Lawyer profile error:", lawyerResult.error)
+
         if (profileResult.data) {
           setProfile(profileResult.data)
           setFormData((prev) => ({
@@ -107,15 +125,16 @@ export default function LawyerProfilePage() {
             email: profileResult.data.email || user.email || "",
             phone: profileResult.data.phone || "",
             city: profileResult.data.location || "",
-            licenseNumber: profileResult.data.bar_license_number || "",
             bio: profileResult.data.bio || "",
           }))
+          console.log("[Lawyer Profile] Set profile form data")
         }
 
         if (lawyerResult.data) {
           setLawyerProfile(lawyerResult.data)
           setFormData((prev) => ({
             ...prev,
+            licenseNumber: lawyerResult.data.bar_license_number || "",
             hourlyRate: lawyerResult.data.hourly_rate || "",
             responseTime: lawyerResult.data.response_time_hours || 24,
             minConsultationHours: lawyerResult.data.min_consultation_hours || 1,
@@ -123,14 +142,17 @@ export default function LawyerProfilePage() {
           }))
           if (lawyerResult.data.specializations) {
             setSpecializations(lawyerResult.data.specializations)
+            console.log("[Lawyer Profile] Set specializations:", lawyerResult.data.specializations)
           }
+          console.log("[Lawyer Profile] Set lawyer profile form data")
         }
 
         if (certsResult.data) {
           setCertifications(certsResult.data)
+          console.log("[Lawyer Profile] Set certifications:", certsResult.data.length)
         }
       } catch (error) {
-        console.error("Error loading lawyer data:", error)
+        console.error("[Lawyer Profile] Error loading lawyer data:", error)
         toast({
           title: "Error",
           description: "Failed to load profile data",
@@ -192,21 +214,28 @@ export default function LawyerProfilePage() {
     try {
       setLoading(true)
 
+      // Update profiles table (basic info)
       const updateData: any = {
         first_name: formData.firstName,
         last_name: formData.lastName,
         phone: formData.phone,
         location: formData.city,
-        bar_license_number: formData.licenseNumber,
         bio: formData.bio,
         updated_at: new Date().toISOString(),
       }
 
+      console.log("[Lawyer Profile] Updating profiles table with:", updateData)
+
       const { error: profileError } = await supabase.from("profiles").update(updateData).eq("id", user.id)
 
-      if (profileError) throw profileError
+      if (profileError) {
+        console.error("[Lawyer Profile] Profile update error:", profileError)
+        throw profileError
+      }
 
+      // Update lawyer_profiles table (lawyer-specific info including bar_license_number)
       const lawyerUpdateData: any = {
+        bar_license_number: formData.licenseNumber,
         hourly_rate: Number.parseFloat(formData.hourlyRate) || 0,
         response_time_hours: formData.responseTime,
         min_consultation_hours: formData.minConsultationHours,
@@ -214,9 +243,14 @@ export default function LawyerProfilePage() {
         updated_at: new Date().toISOString(),
       }
 
+      console.log("[Lawyer Profile] Updating lawyer_profiles table with:", lawyerUpdateData)
+
       const { error: lawyerError } = await supabase.from("lawyer_profiles").update(lawyerUpdateData).eq("id", user.id)
 
-      if (lawyerError) throw lawyerError
+      if (lawyerError) {
+        console.error("[Lawyer Profile] Lawyer profile update error:", lawyerError)
+        throw lawyerError
+      }
 
       // Reload data from Supabase to ensure consistency and sync
       const [profileResult, lawyerResult] = await Promise.all([
@@ -232,7 +266,6 @@ export default function LawyerProfilePage() {
           lastName: profileResult.data.last_name || "",
           phone: profileResult.data.phone || "",
           city: profileResult.data.location || "",
-          licenseNumber: profileResult.data.bar_license_number || "",
           bio: profileResult.data.bio || "",
         }))
         console.log("[Profile] Profile data synced from database")
@@ -242,6 +275,7 @@ export default function LawyerProfilePage() {
         setLawyerProfile(lawyerResult.data)
         setFormData((prev) => ({
           ...prev,
+          licenseNumber: lawyerResult.data.bar_license_number || "",
           hourlyRate: lawyerResult.data.hourly_rate || "",
           responseTime: lawyerResult.data.response_time_hours || 24,
           minConsultationHours: lawyerResult.data.min_consultation_hours || 1,
@@ -552,12 +586,33 @@ export default function LawyerProfilePage() {
 
   return (
     <main className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">Profile Settings</h1>
-        <p className="text-muted-foreground mt-2">Manage your professional profile and preferences</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Profile Settings</h1>
+          <p className="text-muted-foreground mt-2">Manage your professional profile and preferences</p>
+        </div>
+        <Link href="/lawyer/dashboard">
+          <Button variant="outline" className="gap-2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Back to Dashboard
+          </Button>
+        </Link>
       </div>
 
-      <Tabs defaultValue="professional" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
           <TabsTrigger value="professional">Professional</TabsTrigger>
           <TabsTrigger value="specializations">Specializations</TabsTrigger>

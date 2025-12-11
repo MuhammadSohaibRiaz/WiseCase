@@ -5,7 +5,9 @@ import { createClient } from "@/lib/supabase/client"
 import { LawyerCard } from "@/components/lawyer/lawyer-card"
 import { LawyerFilters, type FilterState } from "@/components/lawyer/lawyer-filters"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2 } from "lucide-react"
+import { Loader2, LayoutDashboard } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
 
 interface LawyerProfile {
   id: string
@@ -14,25 +16,21 @@ interface LawyerProfile {
   avatar_url: string | null
   bio: string | null
   location: string | null
-  profile: {
-    email: string
-    phone: string | null
-  } | null
-  lawyer_profile: {
-    specializations: string[]
-    average_rating: number
-    total_cases: number
-    hourly_rate: number
-    response_time_hours: number
-    verified: boolean
-    is_profile_active: boolean
-  } | null
+  availability_status: string | null
+  specializations: string[]
+  average_rating: number
+  total_cases: number
+  hourly_rate: number
+  response_time_hours: number
+  verified: boolean
+  is_profile_active: boolean
 }
 
 export default function MatchPage() {
   const [lawyers, setLawyers] = useState<LawyerProfile[]>([])
   const [filteredLawyers, setFilteredLawyers] = useState<LawyerProfile[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [filters, setFilters] = useState<FilterState>({
     search: "",
     specializations: [],
@@ -42,6 +40,16 @@ export default function MatchPage() {
     location: "",
   })
   const { toast } = useToast()
+
+  // Check authentication status
+  useEffect(() => {
+    const checkAuth = async () => {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      setIsAuthenticated(!!session)
+    }
+    checkAuth()
+  }, [])
 
   // Fetch lawyers from Supabase
   useEffect(() => {
@@ -122,7 +130,7 @@ export default function MatchPage() {
 
         console.log("[v0] Raw data from Supabase:", JSON.stringify(data, null, 2))
         console.log("[v0] Number of lawyers found:", data?.length || 0)
-        
+
         // Log first lawyer's data structure for debugging
         if (data && data.length > 0) {
           console.log("[v0] First lawyer raw data:", JSON.stringify(data[0], null, 2))
@@ -225,7 +233,7 @@ export default function MatchPage() {
     // Specialization filter
     if (filters.specializations.length > 0) {
       result = result.filter((lawyer) =>
-        filters.specializations.some((spec) => lawyer.specializations.some((s) => s.includes(spec))),
+        filters.specializations.some((spec) => lawyer.specializations.some((s: string) => s.includes(spec))),
       )
     }
 
@@ -248,62 +256,74 @@ export default function MatchPage() {
   }, [lawyers, filters])
 
   return (
-    <main className="min-h-screen bg-background py-8 px-4">
-      <div className="mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2 text-balance">Find Your Perfect Lawyer</h1>
-          <p className="text-lg text-muted-foreground">
-            Search through our network of verified lawyers and book a consultation today.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Filters Sidebar */}
-          <div className="lg:col-span-1">
-            <LawyerFilters onFilterChange={setFilters} isLoading={isLoading} />
-          </div>
-
-          {/* Results */}
-          <div className="lg:col-span-3">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : filteredLawyers.length === 0 ? (
-              <div className="text-center py-16 rounded-lg border border-border bg-card p-8">
-                <p className="text-lg text-muted-foreground mb-2">No lawyers found</p>
-                <p className="text-sm text-muted-foreground">Try adjusting your filters to find more options.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Found {filteredLawyers.length} lawyer{filteredLawyers.length !== 1 ? "s" : ""}
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filteredLawyers.map((lawyer) => (
-                    <LawyerCard
-                      key={lawyer.id}
-                      id={lawyer.id}
-                      name={`${lawyer.first_name} ${lawyer.last_name}`}
-                      avatar_url={lawyer.avatar_url}
-                      bio={lawyer.bio}
-                      specializations={lawyer.specializations}
-                      average_rating={lawyer.average_rating}
-                      total_cases={lawyer.total_cases}
-                      location={lawyer.location}
-                      hourly_rate={lawyer.hourly_rate}
-                      response_time_hours={lawyer.response_time_hours}
-                      verified={lawyer.verified}
-                      availability_status={lawyer.availability_status}
-                    />
-                  ))}
-                </div>
-              </div>
+    <>
+      <main className="min-h-screen bg-background py-8 px-4">
+        <div className="mx-auto max-w-7xl">
+          {/* Header */}
+          <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2 text-balance">Find Your Perfect Lawyer</h1>
+              <p className="text-lg text-muted-foreground">
+                Search through our network of verified lawyers and book a consultation today.
+              </p>
+            </div>
+            {isAuthenticated && (
+              <Link href="/client/dashboard">
+                <Button variant="outline" className="gap-2">
+                  <LayoutDashboard className="h-4 w-4" />
+                  Go to Dashboard
+                </Button>
+              </Link>
             )}
           </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Filters Sidebar */}
+            <div className="lg:col-span-1">
+              <LawyerFilters onFilterChange={setFilters} isLoading={isLoading} />
+            </div>
+
+            {/* Results */}
+            <div className="lg:col-span-3">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : filteredLawyers.length === 0 ? (
+                <div className="text-center py-16 rounded-lg border border-border bg-card p-8">
+                  <p className="text-lg text-muted-foreground mb-2">No lawyers found</p>
+                  <p className="text-sm text-muted-foreground">Try adjusting your filters to find more options.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Found {filteredLawyers.length} lawyer{filteredLawyers.length !== 1 ? "s" : ""}
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filteredLawyers.map((lawyer) => (
+                      <LawyerCard
+                        key={lawyer.id}
+                        id={lawyer.id}
+                        name={`${lawyer.first_name} ${lawyer.last_name}`}
+                        avatar_url={lawyer.avatar_url}
+                        bio={lawyer.bio}
+                        specializations={lawyer.specializations}
+                        average_rating={lawyer.average_rating}
+                        total_cases={lawyer.total_cases}
+                        location={lawyer.location}
+                        hourly_rate={lawyer.hourly_rate}
+                        response_time_hours={lawyer.response_time_hours}
+                        verified={lawyer.verified}
+                        availability_status={lawyer.availability_status}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </>
   )
 }

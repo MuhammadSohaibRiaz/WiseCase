@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Hero } from "@/components/sections/hero"
 import { Features } from "@/components/sections/features"
 import { ImageCarousel } from "@/components/sections/carousel"
+import { SiteHeader } from "@/components/site-header"
 
 export const metadata: Metadata = {
   title: "Smart Lawyer Booking System — AI-driven search, booking, and document analysis",
@@ -20,6 +21,7 @@ export default function HomePage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <SiteHeader />
       <Hero />
       <ImageCarousel />
       <section id="how-it-works" className="bg-background">
@@ -60,7 +62,7 @@ export default function HomePage() {
               Register Now
             </a>
             <a
-              href="/analyze"
+              href="/client/analysis"
               className="inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium"
             >
               Get Your Case Document Analyzed

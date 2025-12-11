@@ -51,13 +51,6 @@ export function LawyerDashboardHeader() {
     router.push("/lawyer/profile")
   }
 
-  const handlePublicView = () => {
-    // Open in new tab to show client view
-    if (profile?.id) {
-      window.open(`/client/lawyer/${profile.id}`, "_blank")
-    }
-  }
-
   const handleShare = async () => {
     if (profile?.id) {
       const url = `${window.location.origin}/client/lawyer/${profile.id}`
@@ -132,15 +125,8 @@ export function LawyerDashboardHeader() {
             </div>
           </div>
 
+          {/* Action Buttons - Removed See Public View */}
           <div className="flex flex-wrap gap-2 w-full md:w-auto items-center">
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs flex-1 md:flex-none bg-transparent"
-              onClick={handlePublicView}
-            >
-              See public view
-            </Button>
             <Button size="sm" className="gap-2 text-xs flex-1 md:flex-none" onClick={handleProfileSettings}>
               <Settings className="h-3 w-3 md:h-4 md:w-4" />
               <span className="hidden sm:inline">Profile settings</span>

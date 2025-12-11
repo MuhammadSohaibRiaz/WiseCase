@@ -7,6 +7,7 @@ import { ActiveCases } from "@/components/lawyer/active-cases"
 import { ClientRequests } from "@/components/lawyer/client-requests"
 import { CaseStudies } from "@/components/lawyer/case-studies"
 import { ClientTestimonials } from "@/components/lawyer/testimonials"
+import { LawyerCertificates } from "@/components/lawyer/certificates"
 
 export const metadata: Metadata = {
   title: "Lawyer Dashboard — Smart Lawyer Booking System",
@@ -29,6 +30,7 @@ export default function LawyerDashboard() {
           <main className="md:col-span-3 space-y-4 md:space-y-6">
             <ActiveCases />
             <ClientRequests />
+            <LawyerCertificates />
             <CaseStudies />
             <ClientTestimonials />
           </main>

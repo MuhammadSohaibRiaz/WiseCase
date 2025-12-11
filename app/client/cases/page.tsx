@@ -7,8 +7,9 @@ import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { MessageSquare, Eye, Star, Loader2, AlertCircle, Briefcase } from "lucide-react"
+import { MessageSquare, Eye, Star, Loader2, AlertCircle, Briefcase, Calendar } from "lucide-react"
 import type { Metadata } from "next"
+import Link from "next/link"
 
 interface Case {
   id: string
@@ -254,9 +255,18 @@ export default function MyCasesPage() {
 
   return (
     <main className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">My Cases</h1>
-        <p className="text-muted-foreground mt-2">Track your ongoing and past legal consultations</p>
+      {/* Header with View All Appointments Button */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">My Cases</h1>
+          <p className="text-muted-foreground mt-2">Manage your ongoing legal cases</p>
+        </div>
+        <Link href="/client/appointments">
+          <Button className="gap-2">
+            <Calendar className="h-4 w-4" />
+            View All Appointments
+          </Button>
+        </Link>
       </div>
 
       {cases.length === 0 ? (

@@ -26,7 +26,7 @@ const navItems = [
   { href: "/client/cases", label: "My Cases", icon: Briefcase },
   { href: "/client/analysis", label: "AI Case Analysis", icon: Brain },
   { href: "/client/messages", label: "Messages", icon: MessageSquare },
-  { href: "/client/payments", label: "Payments & Invoices", icon: CreditCard },
+  { href: "/client/payments", label: "Payments", icon: CreditCard },
   { href: "/client/reviews", label: "Reviews", icon: Star },
   { href: "/client/settings", label: "Profile Settings", icon: Settings },
 ]
@@ -67,7 +67,12 @@ export function ClientSidebar({ open, onToggle }: ClientSidebarProps) {
               const Icon = item.icon
               const isActive = pathname === item.href
               return (
-                <Link key={item.href} href={item.href}>
+                <Link key={item.href} href={item.href} onClick={() => {
+                  // Close sidebar on mobile when clicking a link
+                  if (window.innerWidth < 768) {
+                    onToggle()
+                  }
+                }}>
                   <Button
                     variant={isActive ? "default" : "ghost"}
                     className={cn(

@@ -10,7 +10,7 @@ export default function ClientDocumentsPage() {
     <main className="mx-auto max-w-5xl px-4 py-10 grid gap-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl md:text-3xl font-semibold">Documents</h1>
-        <a href="/analyze" className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm">
+        <a href="/client/analysis" className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm">
           Analyze new
         </a>
       </header>

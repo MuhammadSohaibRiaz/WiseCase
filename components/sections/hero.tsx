@@ -26,7 +26,7 @@ export function Hero() {
           </div>
           <div className="mt-6 flex items-center gap-3">
             <Link
-              href="/analyze"
+              href="/client/analysis"
               className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium"
             >
               Get Your Case Document Analyzed

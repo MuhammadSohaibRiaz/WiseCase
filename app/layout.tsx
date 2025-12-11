@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 
 import type { Metadata } from "next"
+import { ThemeProvider } from "@/components/theme-provider"
 
 export const metadata: Metadata = {
   title: {
@@ -72,7 +73,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} antialiased`}>
-        {children}
+        <ThemeProvider defaultTheme="system" enableSystem>
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   )
